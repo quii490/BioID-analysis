@@ -1,0 +1,4 @@
+interface:
+  display_name: "BioID Analysis"
+  short_description: "Score BioID hits, filter contaminants, build a report"
+  default_prompt: "Use $bioid-analysis to score this BioID batch, filter contaminants and produce the interactive report."

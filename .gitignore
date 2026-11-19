@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.pyc
+.Rhistory
+.Rapp.history
+.Rproj.user/
+archive/
+dist/
+*.log

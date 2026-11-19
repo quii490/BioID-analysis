@@ -1,0 +1,4 @@
+interface:
+  display_name: "BioID Batch QC"
+  short_description: "Score BioID hits and flag background and carryover"
+  default_prompt: "Use $bioid-batch-qc to analyze this BioID batch and produce flagged workbooks plus a QC report."

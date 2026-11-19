@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioID 重复性比较</title>
+<style>
+  :root{
+    --navy:#14314d; --tabbar:#1b3f61; --ink:#22313f; --muted:#7a8794; --line:#dbe3ea;
+    --pass:#157a48; --censored:#0b7285; --bait:#8e44ad; --bg:#c92a2a; --warn:#b26a00;
+    --card:#ffffff; --page:#f4f7fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);
+       font:16px/1.55 -apple-system,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{background:var(--navy);color:#fff;padding:18px 26px}
+  header h1{margin:0 0 6px;font-size:25px;font-weight:620}
+  header .subtxt{color:#c9d8e6;font-size:14.5px}
+  header .subtxt b{color:#fff}
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px 26px;background:var(--tabbar)}
+  .tabs button{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);
+               color:#dbe6f0;border-radius:999px;padding:7px 16px;font-size:14.5px;cursor:pointer}
+  .tabs button:hover{background:rgba(255,255,255,.16)}
+  .tabs button.active{background:#fff;color:var(--navy);font-weight:620;border-color:#fff}
+  main{padding:20px 26px 60px}   /* 与 bioid-analysis 一致：不限最大宽度 */
+  .panel{display:none}
+  .panel.active,.print-all .panel{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin:0 0 16px}
+  .card h2{margin:0 0 2px;font-size:22px;font-weight:620}
+  .files{color:var(--muted);font-size:14.5px;margin:2px 0 12px}
+  .files code{background:#eef3f8;border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .kpis{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px}
+  .kpi{border:1px solid var(--line);border-left:3px solid var(--navy);border-radius:6px;
+       padding:8px 14px;min-width:124px;background:#fbfdff}
+  .kpi .lbl{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .kpi .val{font-size:20px;font-weight:620}
+  .kpi.ok{border-left-color:var(--pass)}
+  .kpi.warn{border-left-color:var(--bg)}
+  .toolbar{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin:6px 0 10px}
+  .toolbar label{font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+  .toolbar select,.toolbar input[type=text]{font:inherit;font-size:14.5px;padding:5px 9px;
+       border:1px solid var(--line);border-radius:6px;background:#fff;min-width:190px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;
+       font-size:14.5px;cursor:pointer}
+  .btn:hover{background:#f2f6fa}
+  .suggest{position:relative;display:block}
+  .suggest .list{position:absolute;z-index:5;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);
+       border-radius:6px;box-shadow:0 6px 18px rgba(20,49,77,.12);max-height:240px;overflow:auto;display:none}
+  .suggest .list div{padding:5px 9px;font-size:14.5px;cursor:pointer}
+  .suggest .list div:hover{background:#eef3f8}
+  .pending{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 6px}
+  .pending:not(:empty)::before{content:"待加入：";color:var(--muted);font-size:14px}
+  .pend-chip{display:inline-flex;align-items:center;gap:6px;font-size:14px;background:#fff5ec;
+       border:1px solid #f0d3b8;border-radius:999px;padding:2px 9px}
+  .pend-chip button{border:none;background:none;cursor:pointer;color:#8a94a6}
+  .pend-chip button:hover{color:#b02a2a}
+  .mark-chip{display:inline-flex;align-items:center;gap:8px;font-size:14px;background:#eef3f8;
+       border-radius:999px;padding:3px 10px;margin:2px 6px 2px 0}
+  .mark-chip button{border:none;background:none;cursor:pointer;color:#8a94a6;font-size:14px}
+  .mark-chip button:hover{color:#b02a2a}
+  .mark-chip .swatch{width:20px;height:20px;padding:0;border-radius:50%;border:2px solid #fff;
+       box-shadow:0 0 0 1px var(--line);cursor:pointer}
+  .mark-chip .miss{color:var(--warn)}
+  /* 横纵坐标是同一个量，所以图要方一点。宽度仍是 1410（窄屏缩到卡片宽），高度按"绘图区正好 4:3"反推：
+     固定开销 = 上下边距 96px + 图例条约 188px（两行 15px 字号）= 284px，绘图区宽 = 1410 − 左右边距 94 = 1316，
+     故容器高 = 284 + 1316×3/4 ≈ 1271 → 容器 aspect-ratio ≈ 1.11（2026-10-15 用户：宽不变、加高、变成 4:3）。 */
+  .plot{width:min(100%,1410px);aspect-ratio:1.10;margin:0 auto}
+  .note{color:var(--muted);font-size:14px;margin:8px 0 0}
+  .note b{color:var(--ink)}
+  .scroll{max-height:470px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:8px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left;white-space:nowrap}
+  th{background:#f2f6fa;font-weight:620;color:var(--navy);position:sticky;top:0;cursor:pointer}
+  th:hover{background:#e8f0f8}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.pick{cursor:pointer}
+  tr.picked td{background:#eaf3fb}
+  .tag{display:inline-block;border-radius:3px;padding:1px 6px;font-size:12.5px}
+  .tag.cens{background:#e3f2f5;color:var(--censored)}
+  .tag.bg{background:#fdeaea;color:var(--bg)}
+  .tag.crap{background:#fdf0e0;color:#b26a00}
+  .tag.kind{background:#eef3f8;color:var(--navy)}
+  @media print{
+    .tabs,.toolbar,.btn,.suggest{display:none !important}
+    .panel{display:block !important;break-before:page}
+    .panel:first-of-type{break-before:avoid}
+    main{padding:0}
+    .card{border:none;padding:0}
+    .plot{height:320px;width:100%;aspect-ratio:auto;break-inside:avoid}
+    .note{display:none}
+    .note.keep-print{display:block}
+    h2{break-after:avoid;font-size:15px;margin:0}
+    .files{font-size:10.5px;margin:0 0 6px}
+    .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;break-inside:avoid}
+    .kpi{padding:4px 8px;min-width:92px}
+    .kpi .val{font-size:14px}
+    .kpi .lbl{font-size:10px}
+    .scroll{max-height:none;overflow:visible;border:none}
+    table{border:none;font-size:10px}
+    th,td{padding:2px 4px}
+    th{position:static}
+    tr{break-inside:avoid}
+    /* 打印只排前 18 行（屏幕上是全部）；说明写在表上方，读者知道被截断 */
+    tbody tr:nth-child(n+19){display:none}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>BioID 重复性比较 · 同一诱饵在不同细胞系/批次</h1>
+  <div class="subtxt" id="sub"></div>
+</header>
+<div class="tabs" id="tabs"></div>
+<main id="main"></main>
+/*__PLOTLY__*/
+/*__JSPDF__*/
+/*__SVG2PDF__*/
+/*__FONTB64__*/
+<script>
+const DATA = /*__PAYLOAD__*/;
+const isLog = DATA.value_mode !== "fc";
+const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : v.toFixed(d);
+const esc = (s) => String(s === null || s === undefined ? "" : s)
+  .replace(/[&<>\"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const MARK_COLORS = ["#e8590c", "#2f9e44", "#1971c2", "#c2255c", "#7048e8", "#0c8599"];
+// ── 图形导出 PDF：逐字取自 bioid-analysis（无依赖的手写 PDF 写入器） ──────────
+// ---------------------------------------------------------------- figure PDF
+// Plotly's camera button exports a PNG; this report offers the same thing as a
+// PDF, containing only the figure. Writing a PDF by hand keeps the report free of
+// npm dependencies (the registry is unreachable here), and a one-image document
+// is the simplest possible PDF: catalog, pages, page, image XObject, content.
+function deflateBytes(bytes) {
+  if (typeof CompressionStream === "function") {
+    return new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate")))
+      .arrayBuffer().then((buf) => new Uint8Array(buf));
+  }
+  return Promise.resolve(null);            // caller falls back to raw samples
+}
+
+function pdfFromImage(rgb, width, height, compressed) {
+  const enc = new TextEncoder();
+  const pageWidth = 720;
+  const pageHeight = Math.round(pageWidth * height / width);
+  const chunks = [];
+  const offsets = [];
+  let length = 0;
+  const put = (part) => {
+    const bytes = typeof part === "string" ? enc.encode(part) : part;
+    chunks.push(bytes);
+    length += bytes.length;
+  };
+
+  put("%PDF-1.4\n");
+  const startObject = (n) => { offsets[n] = length; put(`${n} 0 obj\n`); };
+
+  startObject(1);
+  put("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  startObject(2);
+  put("<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+  startObject(3);
+  put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] `
+    + "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n");
+
+  startObject(4);
+  const filter = compressed ? "/Filter /FlateDecode " : "";
+  const samples = compressed || rgb;
+  put(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} `
+    + `/ColorSpace /DeviceRGB /BitsPerComponent 8 ${filter}/Length ${samples.length} >>\nstream\n`);
+  put(samples);
+  put("\nendstream\nendobj\n");
+
+  const content = `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /Im0 Do Q\n`;
+  startObject(5);
+  put(`<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`);
+
+  const xrefStart = length;
+  let xref = "xref\n0 6\n0000000000 65535 f \n";
+  for (let i = 1; i <= 5; i++) {
+    xref += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+  }
+  put(xref);
+  put(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`);
+
+  const out = new Uint8Array(length);
+  let at = 0;
+  for (const chunk of chunks) { out.set(chunk, at); at += chunk.length; }
+  return out;
+}
+
+// 真矢量 PDF：把 plotly 的 SVG 交给 jsPDF + svg2pdf 直接写成矢量 PDF —— 直线仍是路径、文字仍是文字，
+// 放大不糊、能进 Illustrator 继续改。两个库随报告内联（离线可用，均 MIT）。若库不在（例如有人手工裁过
+// 报告、或用了 --plotly cdn 却拿不到 CDN），返回 null，由调用方回退到旧的栅格路径，按钮不会点不动。
+async function figurePdfVector(gd) {
+  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  // svg2pdf 的 UMD 导出是命名空间对象（window.svg2pdf.svg2pdf），不是函数本身
+  const svg2pdfFn = window.svg2pdf && (typeof window.svg2pdf === "function"
+    ? window.svg2pdf
+    : (window.svg2pdf.svg2pdf || (window.svg2pdf.default && window.svg2pdf.default.svg2pdf)));
+  if (!jsPDFCtor || typeof svg2pdfFn !== "function") return null;
+  const width = Math.max(600, Math.round(gd._fullLayout.width));
+  const height = Math.max(360, Math.round(gd._fullLayout.height));
+  const dataUrl = await Plotly.toImage(gd, { format: "svg", width, height });
+  const body = String(dataUrl).split(",")[1] || "";
+  let svgText = /;base64/i.test(String(dataUrl)) ? atob(body) : decodeURIComponent(body);
+  // 中文字形：内嵌 Noto Sans SC 子集（SIL OFL，随报告内联）。jsPDF 自带字体没有 CJK 字形，
+  // 所以把 SVG 里的 font-family 一律改写到注册名 —— 必须整串替换，因为大量文本是从上层 <g>
+  // 继承字体（只改 <text> 自身会漏掉它们，PDF 里中文仍是乱码）。
+  const notoReady = typeof NOTO_FONT_B64 === "string" && NOTO_FONT_B64.length > 1000;
+  if (notoReady) {
+    svgText = svgText
+      .replace(/font-family\s*=\s*"[^"]*"/gi, 'font-family="NotoSansSC"')
+      .replace(/font-family\s*:\s*[^;"]*/gi, "font-family:NotoSansSC");
+  }
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:fixed;left:-10000px;top:0;width:" + width + "px;height:" + height + "px;";
+  holder.innerHTML = svgText;
+  document.body.appendChild(holder);
+  try {
+    const svg = holder.querySelector("svg");
+    if (!svg) return null;
+    const pt = (v) => (v * 72) / 96;   // plotly 的 SVG 按 CSS 像素（96dpi）量，PDF 用点（72dpi）
+    const doc = new jsPDFCtor({
+      unit: "pt",
+      format: [pt(width), pt(height)],
+      orientation: width >= height ? "landscape" : "portrait",
+      compress: true,
+    });
+    // 中文字形：内嵌 Noto Sans SC 子集（SIL OFL，随报告内联），并把 SVG 的 font-family 指到它 ——
+    // jsPDF 自带字体没有 CJK，不改写的话图例/轴标题里的中文会变乱码。缺这一块时退回标准字体。
+    if (notoReady) {
+      // jsPDF 2.x 必须先写进它的虚拟文件系统，再用"文件名"注册字体 —— 直接传 base64 当文件名
+      // 会静默降级（内部报 "Font is not stored as string-data in vFS"），PDF 里中文仍变乱码。
+      doc.addFileToVFS("NotoSansSC.ttf", NOTO_FONT_B64);
+      doc.addFont("NotoSansSC.ttf", "NotoSansSC", "normal");
+      doc.addFont("NotoSansSC.ttf", "NotoSansSC", "bold");
+      doc.setFont("NotoSansSC", "normal");
+    }
+    await svg2pdfFn(svg, doc, { x: 0, y: 0, width: pt(width), height: pt(height) });
+    return new Uint8Array(doc.output("arraybuffer"));
+  } finally {
+    document.body.removeChild(holder);
+  }
+}
+
+// Rasterise one figure and return the PDF bytes.
+async function figurePdfBytes(gd) {
+  const width = Math.max(600, Math.round(gd._fullLayout.width));
+  const height = Math.max(360, Math.round(gd._fullLayout.height));
+  const scale = 2;
+  const dataUrl = await Plotly.toImage(gd, { format: "png", width, height, scale });
+  const img = await new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = dataUrl;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";                       // PDF images carry no alpha
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const rgb = new Uint8Array(canvas.width * canvas.height * 3);
+  for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
+    rgb[j] = rgba[i]; rgb[j + 1] = rgba[i + 1]; rgb[j + 2] = rgba[i + 2];
+  }
+  const compressed = await deflateBytes(rgb);
+  return pdfFromImage(rgb, canvas.width, canvas.height, compressed);
+}
+
+function downloadBytes(bytes, filename, mime) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function toBase64(bytes) {
+  let text = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    text += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(text);
+}
+
+const PDF_ICON = {
+  width: 24, height: 24, path: "M5 3h9l5 5v13H5z M14 3v5h5 "
+    + "M8 13h8 M8 16h8 M8 10h3",
+};
+
+function pdfButton(host) {
+  return {
+    name: "toPdf",
+    title: "Download this figure as vector PDF",
+    icon: PDF_ICON,
+    click: async function (gd) {
+      const button = gd.querySelector('[data-title="Download this figure as vector PDF"]');
+      const name = gd.dataset.label || "figure";
+      try {
+        let bytes = await figurePdfVector(gd);
+        if (!bytes) {
+          if (button) button.title = "矢量库缺失，已回退为栅格 PDF";
+          bytes = await figurePdfBytes(gd);
+        }
+        downloadBytes(bytes, name + "_scatter.pdf", "application/pdf");
+      } catch (err) {
+        if (button) button.title = "PDF export failed: " + err.message;
+        console.error("figure PDF export failed", err);
+      }
+    },
+  };
+}
+
+const KIND_LABEL = {
+  both: "两侧都测到", unquant_a: "A 侧未定量", unquant_b: "B 侧未定量",
+  none: "两侧均无值", only_a: "只在 A 检出", only_b: "只在 B 检出"
+};
+
+document.getElementById("sub").innerHTML =
+  "坐标量：<b>" + (DATA.value_mode === "fc" ? "FC（线性倍数，对数坐标轴）"
+    : DATA.value_mode === "log2fc" ? "log2FC（bioid 原始 log2 倍数）"
+    : "Norm_LOG2FC（batch-QC 批内中心化 log2FC）") + "</b>"
+  + " · 生成于 " + DATA.generated + " · 每个配对一个标签页（打印时每对另起一页）"
+  + "<br>实心对角线 = 完全一致，虚线 = ±1.5×；点线 = ±2σ/±3σ（Δ 的噪声带）；空心三角 = 有一侧对照未检出（比值为下限，不参与相关系数）；"
+  + "贴边的空心方块/三角 = 另一侧没有数值（位置是示意，不是数值）；只在单侧检出的蛋白不上图，见表。"
+  + "<br>红色点 = 批次 QC 背景可疑，橙色点 = CRAPome 污染物（点的形状仍表示证据类别）；左下角淡色区 = 两侧都不高于各自批内中位数（两边都没富集）。";
+
+const tabs = document.getElementById("tabs");
+const main = document.getElementById("main");
+const panels = [];
+DATA.pairs.forEach((pair) => {
+  const el = document.createElement("section");
+  el.className = "panel";
+  main.appendChild(el);
+  panels.push({ name: pair.label, el: el, pair: pair, render: () => renderPair(el, pair) });
+});
+panels.forEach((p, i) => {
+  const b = document.createElement("button");
+  b.textContent = p.name;
+  b.onclick = () => activate(i);
+  tabs.appendChild(b);
+  p.button = b;
+});
+const rendered = new Set();
+function activate(i) {
+  panels.forEach((p, j) => {
+    p.button.classList.toggle("active", j === i);
+    p.el.classList.toggle("active", j === i);
+  });
+  if (!rendered.has(i)) { rendered.add(i); panels[i].render(); }
+  window.dispatchEvent(new Event("resize"));
+}
+function renderAllForPrint() {
+  document.body.classList.add("print-all");
+  panels.forEach((p, i) => { if (!rendered.has(i)) { rendered.add(i); p.render(); } });
+  panels.forEach((p) => {
+    const gd = p.el.querySelector(".plot");
+    if (gd && gd._fullLayout && window.Plotly) { try { Plotly.Plots.resize(gd); } catch (e) { /* ignore */ } }
+  });
+}
+window.addEventListener("beforeprint", renderAllForPrint);
+window.addEventListener("afterprint", () => document.body.classList.remove("print-all"));
+
+// ── 名字标注：照搬 bioid-analysis 的做法 ──────────────────────────────────
+// 它的设计要点（我第一版自己写的放置器做不到，所以看起来"杂乱"）：
+//   · 名字只放在点的左右两侧，文字用 plotly 的 textposition 定位，因此不需要白底；
+//   · 位置按"点阵墨水量"打分（压住的点越少越好），并避开参考线；
+//   · 距离以文字宽度为单位（1 / 1.9 / 3 / 4.5 倍），所以长名字也不会互相压；
+//   · 引线只画从点 22% 到 96% 的那一段，短、贴着自己的点，不会横穿整张图。
+// 这里两条轴是同一个量，点云沿 y = x 排成一条斜带，所以"往哪个方向放名字"有讲究：
+// 垂直于斜带的左上 / 右下最干净，沿斜带的右上 / 左下会跟点云缠在一起，水平居中。
+// 每个方向都按 CALLOUT_STEPS 由近到远试，第一个干净的位置就落笔。
+const CALLOUT_DIRS = [[-1, 0.6], [1, -0.6], [-1, 0], [1, 0], [-1, -0.6], [1, 0.6]];
+// 一档 = 横向 8px、纵向 (半行高 + 4px)；对角方向的引线大约 11px × 档位
+const CALLOUT_STEPS = [1, 1.6, 2.4, 3.4, 4.6, 6, 7.6, 9.6, 12, 15, 19];
+
+// 引线：从点的边上起笔（点半径约 4.5px，这里取 5px），画到文字近端之前 3px 停住。
+// 老写法是从"点到文字"这条线的 22% 处起笔，名字被推远时引线起点离自己的点很远，
+// 看起来就是一根浮在空中的线。
+function leaderFor(x, y, ax, ay, ppl) {
+  const dx = (ax - x) * ppl.x, dy = (ay - y) * ppl.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const t0 = Math.min(0.22, 5 / len), t1 = Math.max(t0, 1 - 3 / len);
+  return { x0: x + (ax - x) * t0, y0: y + (ay - y) * t0,
+           x1: x + (ax - x) * t1, y1: y + (ay - y) * t1 };
+}
+
+function orient(ax, ay, bx, by, cx, cy) { return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax); }
+
+function segmentsCross(s, t) {
+  const o1 = orient(s.x0, s.y0, s.x1, s.y1, t.x0, t.y0);
+  const o2 = orient(s.x0, s.y0, s.x1, s.y1, t.x1, t.y1);
+  const o3 = orient(t.x0, t.y0, t.x1, t.y1, s.x0, s.y0);
+  const o4 = orient(t.x0, t.y0, t.x1, t.y1, s.x1, s.y1);
+  return ((o1 > 0) !== (o2 > 0)) && ((o3 > 0) !== (o4 > 0));
+}
+
+// 引线是否穿过参考线 y = x + c：两端分别落在线的两侧
+function crossesGuide(s, c) { return ((s.y0 - s.x0 - c) > 0) !== ((s.y1 - s.x1 - c) > 0); }
+
+// 引线是否从某个名字框里穿过去
+function segThroughBox(s, b) {
+  if (Math.max(s.x0, s.x1) < b.x0 || Math.min(s.x0, s.x1) > b.x1) return false;
+  if (Math.max(s.y0, s.y1) < b.y0 || Math.min(s.y0, s.y1) > b.y1) return false;
+  const inside = (px, py) => px >= b.x0 && px <= b.x1 && py >= b.y0 && py <= b.y1;
+  if (inside(s.x0, s.y0) || inside(s.x1, s.y1)) return true;
+  return segmentsCross(s, { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y0 }) ||
+         segmentsCross(s, { x0: b.x1, y0: b.y0, x1: b.x1, y1: b.y1 }) ||
+         segmentsCross(s, { x0: b.x1, y0: b.y1, x1: b.x0, y1: b.y1 }) ||
+         segmentsCross(s, { x0: b.x0, y0: b.y1, x1: b.x0, y1: b.y0 });
+}
+
+function labelFontSize(count) {
+  // 跟着画布字号（14）走：名字比刻度略小，多了就再收一点，避免糊成一团
+  return count > 40 ? 11 : (count > 20 ? 12 : 13);
+}
+
+function pxPerUnit(xr, yr, W, H) {
+  return { x: W / ((xr[1] - xr[0]) || 1), y: H / ((yr[1] - yr[0]) || 1) };
+}
+
+// 点云的空间索引：按 16px 的格子分桶，用来快速回答"这个文字框附近有几个点"。
+// 以前用的是 56×56 的粗网格"墨水"打分，格子有 30×11px 那么粗，框压住点却算成 0，
+// 于是名字会浮在点堆上；这里改成精确计数。
+function dotBuckets(points, xr, yr, W, H, cell) {
+  const ppl = pxPerUnit(xr, yr, W, H);
+  const cw = cell / ppl.x, ch = cell / ppl.y;
+  const map = new Map();
+  for (const p of points) {
+    if (p.x < xr[0] || p.x > xr[1] || p.y < yr[0] || p.y > yr[1]) continue;
+    const key = Math.floor((p.x - xr[0]) / cw) + "|" + Math.floor((p.y - yr[0]) / ch);
+    const arr = map.get(key);
+    if (arr) arr.push(p); else map.set(key, [p]);
+  }
+  return {
+    // 框外扩 padPx 的范围内有几个点（精确计数，不含只在桶里擦边的点）
+    count(box, padPx) {
+      const padX = padPx / ppl.x, padY = padPx / ppl.y;
+      const x0 = box.x0 - padX, x1 = box.x1 + padX, y0 = box.y0 - padY, y1 = box.y1 + padY;
+      const i0 = Math.floor((x0 - xr[0]) / cw), i1 = Math.floor((x1 - xr[0]) / cw);
+      const j0 = Math.floor((y0 - yr[0]) / ch), j1 = Math.floor((y1 - yr[0]) / ch);
+      let n = 0;
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const arr = map.get(i + "|" + j);
+          if (!arr) continue;
+          for (const p of arr) if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) n++;
+        }
+      }
+      return n;
+    }
+  };
+}
+
+function boxesOverlap(a, b, padX, padY) {
+  return a.x0 < b.x1 + padX && a.x1 + padX > b.x0 && a.y0 < b.y1 + padY && a.y1 + padY > b.y0;
+}
+
+// 名字摆放：从自己的点旁边由近到远"往外走"，第一个干净的位置就落笔。
+//   · 硬条件：框在画布内、不跟别的名字框重叠、不压自己的点、不压别的"带名字的点"
+//     （诱饵与手工标记都带名字，一个点压住另一个名字最容易看错）；
+//   · 打分：框附近有几个点（精确计数，×3）、引线多长（0.6/px）、引线交叉（60/次）、
+//     引线末端互相挤（50/次）、引线穿过参考线（30/次）；
+//   · 方向先试垂直于斜带的左上 / 右下（两条轴是同一个量时，点云是一条斜带，这两个
+//     方向最干净），再试水平；每一档都从最近的距离开始走，所以名字落在最近的空位上；
+//   · opt.gate 以上的"框附近点数"就不画了（自动名字用 3，诱饵和手工标记给 Infinity：
+//     那是你特意要看的，宁可挪远一点也要画）；
+//   · opt.maxLeader 限制引线长度（自动名字 70px，免得变成横穿图面的划痕）。
+function planCallouts(points, xr, yr, want, taken, fontSize, near, guides, W, H, opt) {
+  if (!want || !points.length) return [];
+  const o = opt || {};
+  const gate = o.gate == null ? Infinity : o.gate;
+  const maxLeader = o.maxLeader == null ? Infinity : o.maxLeader;
+  const drawn = o.leaders || [];
+  const heavy = o.heavy || [];
+  const ppl = pxPerUnit(xr, yr, W, H);
+  const size = fontSize || 10.5;
+  // gapX 11px：点半径最大约 6px，名字从点的外形之外开始，才不会被点压住
+  const charPx = size * 0.68, padX = 11 / ppl.x, padY = 7 / ppl.y, gapX = 11 / ppl.x;
+  const busy = (taken || []).slice();
+  const index = near || dotBuckets(points, xr, yr, W, H, 16);
+  const placed = [];
+  for (const p of points) {
+    if (placed.length >= want) break;
+    const x = p.x, y = p.y;
+    if (!(x >= xr[0] && x <= xr[1] && y >= yr[0] && y <= yr[1])) continue;
+    const label = String(p.gn || p.acc || "");
+    if (!label) continue;
+    const w = (charPx * label.length + 6) / ppl.x, h = (size + 5) / ppl.y;
+    let best = null, short = null, done = false;
+    for (const step of CALLOUT_STEPS) {
+      // 走得太远（引线必然超过 maxLeader）就别再往外试了
+      if (step * 11 > maxLeader && short) break;
+      for (const [sx, sy] of CALLOUT_DIRS) {
+        const anchorX = x + sx * gapX * step;
+        const anchorY = y + sy * (h / 2 + 4 / ppl.y) * step;
+        const box = sx > 0
+          ? { x0: anchorX, y0: anchorY - h / 2, x1: anchorX + w, y1: anchorY + h / 2 }
+          : { x0: anchorX - w, y0: anchorY - h / 2, x1: anchorX, y1: anchorY + h / 2 };
+        if (box.x0 < xr[0] || box.x1 > xr[1] || box.y0 < yr[0] || box.y1 > yr[1]) continue;
+        if (busy.some((b) => boxesOverlap(box, b, padX, padY))) continue;
+        if (x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1) continue;
+        if (heavy.some((q) => q !== p && q.gn &&
+            q.x >= box.x0 && q.x <= box.x1 && q.y >= box.y0 && q.y <= box.y1)) continue;
+        const seg = leaderFor(x, y, anchorX, anchorY, ppl);
+        const lenPx = Math.hypot((seg.x1 - seg.x0) * ppl.x, (seg.y1 - seg.y0) * ppl.y);
+        // 引线既不能跟已有的引线交叉，也不能从别人的名字框里穿过去
+        // （穿过别人的名字，读的人会以为那根线接的是那个名字）
+        let xing = 0, tips = 0;
+        for (const b of busy) if (segThroughBox(seg, b)) xing += 1;
+        for (const s of drawn) {
+          if (segmentsCross(seg, s)) xing += 1;
+          if (Math.hypot((seg.x1 - s.x1) * ppl.x, (seg.y1 - s.y1) * ppl.y) < 18) tips += 1;
+        }
+        let guideXing = 0;
+        for (const c of (guides || [])) if (crossesGuide(seg, c)) guideXing += 1;
+        const cover = index.count(box, 5);
+        // “框附近有点”比“引线长一点”重得多：宁可把名字挪到斜带边上（引线 100px 上下、
+        // 一条直线），也不要让字压在点堆里读不出来
+        const cost = 12 * cover + 1.0 * lenPx + 80 * xing + 60 * tips + 30 * guideXing;
+        const item = { p: p, x: anchorX, y: anchorY, box: box, seg: seg, cost: cost, cover: cover,
+                       side: sx > 0 ? "right" : "left" };
+        if (!best || cost < best.cost) best = item;
+        // 够短的才进候选池：诱饵/标记若实在找不到够短的位，会退回 best（宁可长一点也别不画）
+        if (lenPx <= maxLeader && (!short || cost < short.cost)) short = item;
+        // 名字附近一个点都没有、引线还短、也不交叉：就是它了
+        if (cover === 0 && lenPx <= 45 && xing === 0 && tips === 0 && guideXing === 0) { done = true; break; }
+      }
+      if (done) break;
+    }
+    const pick = short || (gate === Infinity ? best : null);
+    if (!pick || pick.cover > gate) continue;
+    busy.push(pick.box);
+    drawn.push(pick.seg);
+    placed.push(pick);
+  }
+  return placed;
+}
+
+// 一个计划 -> [名字 text trace（左右两组）, 引线 line trace]
+function calloutTraces(plan, color, fontSize, hoverFn) {
+  if (!plan.length) return [];
+  const left = plan.filter((t) => t.side === "left");
+  const right = plan.filter((t) => t.side === "right");
+  const mk = (side, position) => side.length ? {
+    type: "scatter", mode: "text", showlegend: false, name: "名字",
+    x: side.map((t) => t.x), y: side.map((t) => t.y),
+    text: side.map((t) => t.p.gn || t.p.acc),
+    textposition: position,
+    textfont: { size: fontSize || 10.5, color: color || "#2f3f52" },
+    customdata: side.map((t) => hoverFn(t.p)),
+    hovertemplate: "%{customdata}"
+  } : null;
+  const segs = [];
+  plan.forEach((t) => {
+    if (segs.length) segs.push(null);
+    // 起点终点都在 planCallouts 里算好了：贴着点起笔、到文字前 3px 停
+    segs.push({ x: t.seg.x0, y: t.seg.y0 }, { x: t.seg.x1, y: t.seg.y1 });
+  });
+  const leader = {
+    type: "scatter", mode: "lines", name: "引线", showlegend: false, hoverinfo: "skip",
+    x: segs.map((q) => (q ? q.x : null)), y: segs.map((q) => (q ? q.y : null)),
+    line: { color: color || "#8fa6bb", width: 0.9 }, opacity: color ? 0.85 : 0.5
+  };
+  return [mk(right, "middle right"), mk(left, "middle left"), leader].filter(Boolean);
+}
+
+// ── hover 里的蛋白注释（与 bioid-analysis 同一份缓存） ──────────────────────
+function annotationFor(p) {
+  const table = DATA.annotations || {};
+  const entry = table[p.acc] || (p.acc ? table[String(p.acc).split("-")[0]] : null);
+  if (!entry) return null;
+  return { name: entry[0] || "", gene: entry[1] || "", aliases: entry[2] || "", func: entry[3] || "" };
+}
+
+function wrapText(text, width) {
+  if (!text) return "";
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    if (line && (line.length + 1 + word.length) > width) { lines.push(line); line = word; }
+    else { line = line ? line + " " + word : word; }
+  }
+  if (line) lines.push(line);
+  return lines.join("<br>");
+}
+
+function renderPair(host, pair) {
+  const MARK_KEY = "bioid-repeat-marks:" + (pair.mark_key || pair.label);
+  const loadMarks = () => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(MARK_KEY) || "[]");
+      return Array.isArray(raw) ? raw.filter((g) => g && g.color && Array.isArray(g.names)) : [];
+    } catch (e) { return []; }
+  };
+  const saveMarks = () => {
+    try { localStorage.setItem(MARK_KEY, JSON.stringify(state.manual)); } catch (e) { /* private mode */ }
+  };
+  // 注意不能用 `pair.label_top || 8`：--label-top 0 会被 || 变成 8，"不标名字"就失效了
+  const initialBudget = (pair.label_top === null || pair.label_top === undefined) ? 8 : pair.label_top;
+  const state = { manual: loadMarks(), labelTop: initialBudget, picked: new Set(), pending: [],
+                  filter: "all", sortCol: null, sortDir: -1 };
+
+  // CRAPome 标注的来源说明（表头提示与图下注释共用一句话）
+  const crapomeNote = () => {
+    const meta = DATA.crapome || {};
+    if (!meta.applied) return "本次未应用 CRAPome 表";
+    return "≥" + Math.round(100 * (meta.frequency || 0)) + "% 的 " + (meta.cell || "对照")
+      + " 对照里检出（≥" + (meta.min_sc || 0) + " SC）";
+  };
+  const rows = pair.rows;
+  const both = rows.filter((r) => r.kind === "both");
+  const measured = both.filter((r) => !r.censored);
+  const censored = both.filter((r) => r.censored);
+  // kind 语义：unquant_a = A 侧没有数值（点在左边界），unquant_b = B 侧没有数值（点在下边界）
+  const unqA = rows.filter((r) => r.kind === "unquant_a");
+  const unqB = rows.filter((r) => r.kind === "unquant_b");
+  const baitRow = both.find((r) => r.gn && r.gn.toUpperCase() === (pair.bait_gene || "").toUpperCase())
+    || rows.find((r) => r.gn && r.gn.toUpperCase() === (pair.bait_gene || "").toUpperCase()) || null;
+  const xsAll = both.map((r) => r.x).concat(both.map((r) => r.y));
+  const lo = Math.min.apply(null, xsAll), hi = Math.max.apply(null, xsAll);
+  const pad = (hi - lo) * 0.06 || 1;
+  const loB = lo - pad, hiB = hi + pad;
+  const delta = pair.delta, off = 2 ** delta;
+
+  const size = (r) => Math.min(3.5 + 1.6 * Math.sqrt(Math.max(r.up || 1, 1)), 12);
+  // 完整弹窗：注释头（名称/别名/功能，与 bioid-analysis 同一份缓存）+ 本对的数值明细
+  const hover = (r) => {
+    const ann = annotationFor(r);
+    const head = ["<b>" + esc(r.gn) + "</b> (" + esc(r.acc) + ")"];
+    if (ann && ann.name) head.push("<br>" + esc(ann.name));
+    else if (r.desc) head.push("<br>" + esc(r.desc));
+    if (ann && ann.aliases) head.push("<br><i>also known as</i> " + esc(ann.aliases));
+    if (ann && ann.func) head.push("<br>" + wrapText(ann.func, 76));
+    return head.join("")
+      + "<br>" + esc(pair.left_axis) + ": <b>" + fmt(r.x) + "</b>" + pair.unit
+      + "  ·  " + esc(pair.right_axis) + ": <b>" + fmt(r.y) + "</b>" + pair.unit
+      + "<br>unique 肽 " + r.up + " · 覆盖 " + fmt(r.cov, 0) + "% · " + KIND_LABEL[r.kind]
+      + (r.censored ? "<br><b>有一侧对照未检出 —— 比值为下限</b>" : "")
+      + (r.bg ? "<br><b>批次 QC: " + esc(r.bg) + "</b>" : "")
+      + (r.crapome ? "<br><b>CRAPome 污染物: " + fmt((r.cfreq || 0) * 100, 0) + "% 的对照里检出</b>"
+                   : (r.cfreq ? "<br>CRAPome: " + fmt(r.cfreq * 100, 0) + "% 的对照里检出" : ""))
+      + "<extra></extra>";
+  };
+
+  function rowBy(name) {
+    const key = String(name || "").toUpperCase();
+    const hits = rows.filter((r) => (r.gn && r.gn.toUpperCase() === key) || (r.acc && r.acc.toUpperCase() === key));
+    return hits.find((r) => r.kind === "both") || hits[0] || null;
+  }
+
+  host.innerHTML =
+    '<div class="card">'
+    + "<h2>" + esc(pair.label) + "</h2>"
+    + '<div class="files">A: <code>' + esc(pair.left.name) + "</code>（" + esc(pair.left_axis) + "） · "
+    + "B: <code>" + esc(pair.right.name) + "</code>（" + esc(pair.right_axis) + "）<br>"
+    + "坐标量取自列 <code>" + esc(pair.value_column) + "</code>；按 Accession 归并</div>"
+    + '<div class="kpis">'
+    + kpi("匹配蛋白", pair.n_both + pair.n_unquant_a + pair.n_unquant_b + pair.n_none)
+    + kpi("图上点", pair.n_both, "")
+    + kpi("进入相关", pair.n_measured, "")
+    + kpi("含下限值", pair.n_censored, "")
+    + kpi("未定量：A / B 侧", pair.n_unquant_a + " / " + pair.n_unquant_b, "")
+    + kpi("两侧均无值", pair.n_none, "")
+    + kpi("只在 A / B", pair.n_only_a + " / " + pair.n_only_b, "")
+    + kpi("Spearman r", fmt(pair.rho, 3), pair.rho !== null && pair.rho >= 0.8 ? "ok" : pair.rho !== null && pair.rho < 0.5 ? "warn" : "")
+    + kpi("Pearson r", fmt(pair.r, 3), "")
+    + kpi("斜率 / 截距", fmt(pair.slope, 2) + " / " + fmt(pair.intercept, 2), "")
+    + kpi("判断", esc(pair.verdict), pair.rho !== null && pair.rho >= 0.8 ? "ok" : pair.rho !== null && pair.rho < 0.5 ? "warn" : "")
+    + "</div>"
+    + '<div class="toolbar">'
+    + '<label>Label 数量<select id="label-budget"></select></label>'
+    + "<label>Mark proteins — 输入基因/Accession，可连续点多个建议"
+    + '<span class="suggest"><input type="text" id="mark-input" autocomplete="off" placeholder="如 PPP2R1B / P30153">'
+    + '<span class="list" id="mark-suggest"></span></span></label>'
+    + '<label>颜色<input type="color" id="manual-color" value="#e8590c"></label>'
+    + '<button class="btn" id="manual-add" type="button">加入标记</button>'
+    + '<button class="btn" id="mark-selected" type="button">把选中的行加入待加入</button>'
+    + '<button class="btn" id="manual-clear" type="button">清空标记</button>'
+    + '<span id="label-note" class="note" style="align-self:center"></span>'
+    + "</div>"
+    + '<div class="pending" id="mark-pending"></div>'
+    + '<div id="mark-list" style="margin:2px 0 10px"></div>'
+    + '<div class="plot" id="plot"></div>'
+    + '<p class="note">相关系数只用<b>两侧都测到</b>的 ' + pair.n_measured + " 个蛋白；含下限值的点画成空心并排除在 r 之外。"
+    + "口径核对：匹配 " + (pair.n_both + pair.n_unquant_a + pair.n_unquant_b + pair.n_none)
+    + " = 图上点 " + pair.n_both + " + 一侧未定量 " + (pair.n_unquant_a + pair.n_unquant_b)
+    + " + 两侧均无值 " + pair.n_none + "；只在单侧检出 " + (pair.n_only_a + pair.n_only_b) + " 个不上图，见下表。"
+    + "斜率 = 以 A 为 x、B 为 y 的最小二乘拟合，完全重复时接近 1（截距 0）。"
+    + "A、B 若来自不同批次，各自的载量校正独立完成，因此看的是<b>相对一致性</b>，不是绝对倍数。"
+    + "红色点 = 批次 QC 背景可疑，橙色点 = CRAPome 污染物（" + crapomeNote() + "）；"
+    + "左下角淡色区 = 两侧都不高于各自批内中位数，即两边都没富集。</p>"
+    + '<div class="toolbar"><label>筛选<select id="row-filter">'
+    + '<option value="all">全部 ' + rows.length + " 行</option>"
+    + '<option value="both">两侧都测到 ' + both.length + " 行</option>"
+    + '<option value="unquant">一侧未定量 ' + (unqA.length + unqB.length) + " 行</option>"
+    + '<option value="only">只在单侧检出 ' + (pair.n_only_a + pair.n_only_b) + " 行</option>"
+    + '<option value="bg">批次 QC 背景标记行</option>'
+    + '<option value="crapome">CRAPome 污染物行</option>'
+    + "</select></label>"
+    + '<span class="note" style="align-self:center">点表头排序，点行选中（再点"把选中的行加入标记"）</span></div>'
+    + '<div class="scroll" id="rows-scroll"></div>'
+    + "</div>";
+
+  function kpi(label, value, cls) {
+    return '<div class="kpi ' + (cls || "") + '"><div class="lbl">' + label + '</div><div class="val">' + value + "</div></div>";
+  }
+
+  // ── 一张总表：可排序、可筛选、可滚动，行数完整 ────────────────────────────
+  const COLS = [
+    ["蛋白", (r) => r.gn || r.acc, "text"],
+    ["Accession", (r) => r.acc, "text"],
+    ["A 值", (r) => (r.kind === "both" || r.kind === "unquant_b" || r.kind === "only_a") ? r.x : null, "num"],
+    ["B 值", (r) => (r.kind === "both" || r.kind === "unquant_a" || r.kind === "only_b") ? r.y : null, "num"],
+    ["Δ (A−B)", (r) => (r.kind === "both" && r.x !== null && r.y !== null) ? r.x - r.y : null, "num"],
+    ["A+B", (r) => (r.x !== null && r.y !== null) ? r.x + r.y : null, "num"],
+    ["类别", (r) => KIND_LABEL[r.kind], "text"],
+    ["unique 肽", (r) => r.up, "int"],
+    ["覆盖 %", (r) => r.cov, "num"],
+    ["备注", (r) => r.bg || (r.censored ? "下限" : ""), "text"]
+  ];
+  // 默认排序：A+B 降序。两侧都测到的蛋白按"两侧信号量之和"从高到低排在最前；A+B 为空的
+  // （一侧未定量、只在单侧检出）按比较器的空值规则落在表尾。点表头可换列/换方向。
+  state.sortCol = COLS.findIndex((c) => c[0] === "A+B");
+  state.sortDir = -1;
+  const scroll = host.querySelector("#rows-scroll");
+  const filterSel = host.querySelector("#row-filter");
+  function visibleRows() {
+    let list = rows;
+    if (state.filter === "both") list = list.filter((r) => r.kind === "both");
+    else if (state.filter === "unquant") list = list.filter((r) => r.kind === "unquant_a" || r.kind === "unquant_b");
+    else if (state.filter === "only") list = list.filter((r) => r.kind === "only_a" || r.kind === "only_b");
+    else if (state.filter === "bg") list = list.filter((r) => r.bg);
+    else if (state.filter === "crapome") list = list.filter((r) => r.crapome);
+    if (state.sortCol !== null) {
+      const col = COLS[state.sortCol];
+      list = list.slice().sort((a, b) => {
+        const va = col[1](a), vb = col[1](b);
+        if (va === null || va === undefined) return 1;
+        if (vb === null || vb === undefined) return -1;
+        return col[2] === "text" ? String(va).localeCompare(String(vb)) * state.sortDir
+                                 : (va - vb) * state.sortDir;
+      });
+    }
+    return list;
+  }
+  function renderTable() {
+    const list = visibleRows();
+    scroll.innerHTML = "<table><thead><tr>"
+      + COLS.map((c, i) => '<th data-i="' + i + '" class="' + (c[2] === "text" ? "" : "num") + '">'
+          + esc(c[0]) + (state.sortCol === i ? (state.sortDir < 0 ? " ↓" : " ↑") : "") + "</th>").join("")
+      + '</tr></thead><tbody>'
+      + list.map((r) => {
+          const on = state.picked.has(r);
+          const notes = [];
+          if (r.censored) notes.push('<span class="tag cens">下限</span>');
+          if (r.bg) notes.push('<span class="tag bg">' + esc(r.bg) + "</span>");
+          if (r.crapome) notes.push('<span class="tag crap">CRAPome ' + fmt((r.cfreq || 0) * 100, 0) + "%</span>");
+          return '<tr data-gn="' + esc(r.gn) + '" class="pick' + (on ? " picked" : "") + '">'
+            + COLS.map((c) => {
+                const v = c[1](r);
+                return '<td class="' + (c[2] === "text" ? "" : "num") + '">'
+                  + (c[0] === "类别" ? '<span class="tag kind">' + esc(v) + "</span>"
+                     : c[0] === "备注" ? (notes.join(" ") || "–")
+                     : (c[2] === "text" ? esc(v) : fmt(v))) + "</td>";
+              }).join("") + "</tr>";
+        }).join("")
+      + "</tbody></table>";
+    scroll.querySelectorAll("th").forEach((th) => {
+      th.onclick = () => {
+        const i = parseInt(th.dataset.i, 10);
+        if (state.sortCol === i) state.sortDir = -state.sortDir; else { state.sortCol = i; state.sortDir = -1; }
+        renderTable();
+      };
+    });
+    scroll.querySelectorAll("tr[data-gn]").forEach((tr) => {
+      tr.onclick = () => {
+        const row = rows.find((r) => r.gn === tr.dataset.gn);
+        if (!row) return;
+        if (state.picked.has(row)) { state.picked.delete(row); tr.classList.remove("picked"); }
+        else { state.picked.add(row); tr.classList.add("picked"); }
+        const note = host.querySelector("#pick-note") || null;
+        if (note) note.textContent = state.picked.size ? state.picked.size + " 行已选中" : "";
+      };
+    });
+  }
+  filterSel.onchange = () => { state.filter = filterSel.value; renderTable(); };
+
+  // ── Label 数量 ──────────────────────────────────────────────────────────
+  const budgetSel = host.querySelector("#label-budget");
+  const opts = Array.from(new Set([0, 8, state.labelTop, 15, 30, 60, 120, 250])).sort((a, b) => a - b);
+  budgetSel.innerHTML = opts.map((v) =>
+    '<option value="' + v + '"' + (v === state.labelTop ? " selected" : "") + ">"
+    + (v === 0 ? "不标名字" : "最多 " + v + " 个") + "</option>").join("");
+  budgetSel.onchange = () => { state.labelTop = parseInt(budgetSel.value, 10) || 0; draw(); };
+
+  // ── marks：点建议即加入（可改颜色），与 bioid-analysis 的交互一致 ──────────
+  function addPending(names) {
+    names.forEach((name) => {
+      const row = rowBy(name);
+      if (!row) return;
+      const token = row.gn || row.acc;
+      if (!token || state.pending.indexOf(token) >= 0) return;
+      state.pending.push(token);
+    });
+    renderPending();
+  }
+  function renderPending() {
+    const box = host.querySelector("#mark-pending");
+    box.innerHTML = state.pending.map((n) =>
+      '<span class="pend-chip">' + esc(n) + '<button type="button" data-n="' + esc(n) + '">×</button></span>').join("");
+    box.querySelectorAll("button[data-n]").forEach((b) => {
+      b.onclick = () => { state.pending = state.pending.filter((x) => x !== b.dataset.n); renderPending(); };
+    });
+  }
+
+  const input = host.querySelector("#mark-input");
+  const suggest = host.querySelector("#mark-suggest");
+  input.oninput = () => {
+    const q = input.value.trim().toUpperCase();
+    if (!q) { suggest.style.display = "none"; return; }
+    const hits = rows.map((r) => r.gn || r.acc)
+      .filter((n, i, arr) => n && arr.indexOf(n) === i && n.toUpperCase().indexOf(q) >= 0)
+      .slice(0, 10);
+    suggest.innerHTML = hits.map((n) => {
+      const r = rowBy(n);
+      return '<div data-n="' + esc(n) + '">' + esc(n)
+        + (r.kind === "both" ? "" : ' <span class="miss">(' + KIND_LABEL[r.kind] + ")</span>") + "</div>";
+    }).join("");
+    suggest.style.display = hits.length ? "block" : "none";
+    suggest.querySelectorAll("div").forEach((d) => {
+      d.onclick = () => { addPending([d.dataset.n]); input.value = ""; suggest.style.display = "none"; input.focus(); };
+    });
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter" && input.value.trim()) { addPending([input.value.trim()]); input.value = ""; suggest.style.display = "none"; }
+  };
+  function renderMarks() {
+    const box = host.querySelector("#mark-list");
+    box.innerHTML = state.manual.map((g, gi) => {
+      const miss = g.names.filter((n) => { const r = rowBy(n); return !r || r.kind !== "both"; });
+      return '<span class="mark-chip">'
+        + '<input type="color" class="swatch" value="' + g.color + '" data-g="' + gi + '" title="点击改颜色">'
+        + g.names.map(esc).join(", ")
+        + (miss.length ? ' <span class="miss">(' + miss.map(esc).join(", ") + " 未上图标)</span>" : "")
+        + '<button type="button" data-g="' + gi + '" title="删除">×</button></span>';
+    }).join("") || '<span class="note">还没有标记。上面搜索后点建议即可加入，颜色可在左侧圆点上改。</span>';
+    box.querySelectorAll(".swatch").forEach((sw) => {
+      sw.oninput = () => { state.manual[sw.dataset.g].color = sw.value; saveMarks(); renderMarks(); draw(); };
+    });
+    box.querySelectorAll("button[data-g]").forEach((b) => {
+      b.onclick = () => { state.manual.splice(parseInt(b.dataset.g, 10), 1); saveMarks(); renderMarks(); draw(); };
+    });
+  }
+  host.querySelector("#manual-clear").onclick = () => {
+    state.manual = []; state.pending = [];
+    saveMarks(); renderPending(); renderMarks(); draw();
+  };
+  // 提交"待加入"：整批一组，颜色取工具栏的颜色（与 bioid-analysis 的 Add mark 一致）
+  host.querySelector("#manual-add").onclick = () => {
+    if (!state.pending.length) { input.focus(); return; }
+    state.manual.push({ names: state.pending.slice(), color: host.querySelector("#manual-color").value });
+    state.pending = [];
+    saveMarks(); renderPending(); renderMarks(); draw();
+  };
+  // 表格里选中的行进入"待加入"；提交后清空选择，下一批不会再带着上一次的选择
+  host.querySelector("#mark-selected").onclick = () => {
+    if (!state.picked.size) return;
+    addPending(Array.from(state.picked).map((r) => r.gn || r.acc));
+    state.picked.clear();
+    host.querySelectorAll("tr.picked").forEach((tr) => tr.classList.remove("picked"));
+    input.focus();
+  };
+
+  function markedRows() {
+    if (!state.manual.length) return [];
+    return state.manual.map((g) => ({ group: g, rows: g.names.map(rowBy).filter(Boolean) }));
+  }
+
+  function buildFigure() {
+    const traces = [];
+    // 批次 QC 背景可疑 / CRAPome 污染物：直接改点的颜色（不套外圈），形状仍表示证据类别。
+    // 这两组各自成 trace 并单独上图例，因此可以在图例里点掉去看剩下的点；它们从原来的类别
+    // trace 里移出，否则同一批点会被画两次、点图例也隐藏不干净（与 bioid-analysis 同一做法）。
+    // 一个点两者都占时按 批次 QC > CRAPome 取色；两者都在悬停与表格"备注"里写明。
+    const flagOf = (r) => (r.bg ? "qc_bg" : (r.crapome ? "crapome" : ""));
+    const shapeOf = (r) => (r.kind === "unquant_a" || r.kind === "unquant_b") ? "square"
+                          : (r.censored ? "triangle-up" : "circle");
+    const sizeOf = (r) => (r.kind === "unquant_a" || r.kind === "unquant_b") ? 10
+                          : (r.censored ? 9 : size(r));
+    const posX = (r) => (r.kind === "unquant_a" ? loB : r.x);
+    const posY = (r) => (r.kind === "unquant_b" ? loB : r.y);
+    const mk = (subset, name, color, hollow, symbol, xf, yf, fixedSize, lineWidth) => ({
+      type: "scatter", mode: "markers", name: name + " (" + subset.length + ")",
+      x: subset.map(xf), y: subset.map(yf),
+      marker: {
+        size: fixedSize ? subset.map(() => fixedSize) : subset.map(size), symbol: symbol || "circle",
+        color: hollow ? "rgba(255,255,255,.6)" : color,
+        opacity: hollow ? 1 : 0.75,
+        line: hollow ? { color: color, width: lineWidth || 1.5 }
+                     : { color: "rgba(255,255,255,.8)", width: 0.5 }
+      },
+      customdata: subset.map(hover), hovertemplate: "%{customdata}"
+    });
+    // 被标出的点：实心的（原来两侧都测到）与空心的（含下限值/一侧未定量）分开成 trace，
+    // 这样空心点不会因为换色而变成实心，图例只列实心那两组（数量最多、也是主要看点）。
+    const flagged = ["qc_bg", "crapome"].map((key) => ({
+      key, color: DATA.colors[key],
+      name: key === "qc_bg" ? "批次 QC 背景可疑" : "CRAPome 污染物",
+      solid: rows.filter((r) => flagOf(r) === key && r.kind === "both" && !r.censored),
+      hollow: rows.filter((r) => flagOf(r) === key
+        && ((r.kind === "both" && r.censored) || r.kind === "unquant_a" || r.kind === "unquant_b")),
+    }));
+    const flaggedSet = new Set(flagged.flatMap((f) => f.solid.concat(f.hollow)));
+    const plain = (subset) => subset.filter((r) => !flaggedSet.has(r));
+    traces.push(mk(plain(measured), "两侧都测到", DATA.colors.point, false, "circle", (r) => r.x, (r) => r.y));
+    const cens = plain(censored);
+    if (cens.length) traces.push({
+      type: "scatter", mode: "markers", name: "含下限值 (" + cens.length + ")",
+      x: cens.map((r) => r.x), y: cens.map((r) => r.y),
+      marker: { size: 9, symbol: "triangle-up", color: "rgba(255,255,255,0)",
+                line: { color: DATA.colors.censored, width: 1.6 } },
+      customdata: cens.map(hover), hovertemplate: "%{customdata}"
+    });
+    // 未定量的方块：用实心 symbol + 透明填充才画得出来（plotly 的 *-open 在本包里不渲染）
+    const pa = plain(unqA), pb = plain(unqB);
+    if (pa.length) traces.push(mk(pa, "A 侧未定量", "#7d8894", true, "square", () => loB, (r) => r.y, 10, 1.6));
+    if (pb.length) traces.push(mk(pb, "B 侧未定量", "#7d8894", true, "square", (r) => r.x, () => loB, 10, 1.6));
+    flagged.forEach((f) => {
+      if (f.solid.length) traces.push({
+        type: "scatter", mode: "markers", name: f.name + " (" + f.solid.length + ")",
+        x: f.solid.map((r) => r.x), y: f.solid.map((r) => r.y),
+        marker: { size: f.solid.map(size), symbol: "circle", color: f.color,
+                  opacity: 0.9, line: { color: "rgba(255,255,255,.85)", width: 0.6 } },
+        customdata: f.solid.map(hover), hovertemplate: "%{customdata}"
+      });
+      if (f.hollow.length) traces.push({
+        type: "scatter", mode: "markers", name: f.name + "（空心） (" + f.hollow.length + ")",
+        x: f.hollow.map(posX), y: f.hollow.map(posY), showlegend: false,
+        marker: { size: f.hollow.map(sizeOf), symbol: f.hollow.map(shapeOf),
+                  color: "rgba(255,255,255,.6)", opacity: 1,
+                  line: { color: f.color, width: 1.6 } },
+        customdata: f.hollow.map(hover), hovertemplate: "%{customdata}"
+      });
+    });
+    const bait = baitRow;
+    if (bait) {
+      traces.push({ type: "scatter", mode: "markers", name: "诱饵自身",
+                    x: [bait.x], y: [bait.y],
+                    marker: { size: 13, symbol: "diamond", color: DATA.colors.bait },
+                    customdata: [hover(bait)], hovertemplate: "%{customdata}" });
+    }
+    markedRows().forEach((g) => {
+      const pts = g.rows.filter((r) => r.kind === "both");
+      if (!pts.length) return;
+      traces.push({ type: "scatter", mode: "markers", name: "标记: " + g.group.names.join(", "),
+                    x: pts.map((r) => r.x), y: pts.map((r) => r.y),
+                    marker: { size: 13, color: g.group.color, opacity: 0.95, line: { color: "#fff", width: 1 } },
+                    customdata: pts.map(hover), hovertemplate: "%{customdata}" });
+    });
+    const yUp = (v) => (isLog ? v + delta : v * off);
+    const yDn = (v) => (isLog ? v - delta : v / off);
+    // Δ = A − B 在实测点上的离散度：±2σ/±3σ 是两条"平行于对角线"的噪声带，
+    // 落在带外的点，其两侧差异超出这批数据自身的噪声（相当于 bioid-analysis 的 2σ/3σ 参考线）。
+    // σ 一律在 log2 尺度上算；FC 模式下坐标轴按 log10 铺，所以要乘 log10(2) 换算。
+    const diffs = measured.map((r) => isLog ? (r.x - r.y) : (Math.log2(r.x) - Math.log2(r.y)));
+    let sd = null;
+    if (diffs.length > 3) {
+      const mean = diffs.reduce((s, v) => s + v, 0) / diffs.length;
+      const varSum = diffs.reduce((s, v) => s + (v - mean) * (v - mean), 0);
+      sd = Math.sqrt(varSum / (diffs.length - 1));
+      if (!isFinite(sd) || sd <= 0) sd = null;
+    }
+    const sdAxis = sd === null ? null : (isLog ? sd : sd * Math.log10(2));
+    // 沿 y 方向平移 k 个 σ（log2 模式是加法，FC 模式是乘 10^kσ）
+    const shift = (v, k) => (isLog ? v + k * sd : v * Math.pow(10, k * sdAxis));
+    const shapes = [
+      { type: "line", x0: loB, y0: yUp(loB), x1: hiB, y1: yUp(hiB), line: { color: "#8fa6bb", width: 1.5, dash: "dash" } },
+      { type: "line", x0: loB, y0: yDn(loB), x1: hiB, y1: yDn(hiB), line: { color: "#8fa6bb", width: 1.5, dash: "dash" } },
+      { type: "line", x0: loB, y0: loB, x1: hiB, y1: hiB, line: { color: "#33587a", width: 2.2 } }
+    ];
+    // 左下角（两侧都不高于各自批内中位数 = 两边都没富集）淡色铺底，把那团背景点标出来；
+    // layer:"below" 保证铺底在点下面，不把点染色。log2 模式下中位数是 0，FC 模式下是 1。
+    const cornerValue = isLog ? 0 : 1;
+    if (cornerValue > loB) {
+      shapes.unshift({ type: "rect", x0: loB, x1: cornerValue, y0: loB, y1: cornerValue,
+                       fillcolor: "rgba(122,135,148,.13)", line: { width: 0 }, layer: "below" });
+    }
+    if (sd !== null) {
+      [2, 3].forEach((k) => {
+        shapes.push({ type: "line", x0: loB, y0: shift(loB, k), x1: hiB, y1: shift(hiB, k),
+                      line: { color: "#aab4c0", width: 1.2, dash: "dot" } });
+        shapes.push({ type: "line", x0: loB, y0: shift(loB, -k), x1: hiB, y1: shift(hiB, -k),
+                      line: { color: "#aab4c0", width: 1.2, dash: "dot" } });
+      });
+    }
+    if (isLog) {
+      shapes.push({ type: "line", x0: 0, y0: loB, x1: 0, y1: hiB, line: { color: "#eef2f6", width: 1 } });
+      shapes.push({ type: "line", x0: loB, y0: 0, x1: hiB, y1: 0, line: { color: "#eef2f6", width: 1 } });
+    }
+    traces.push({ type: "scatter", mode: "lines", x: [null, null], y: [null, null], name: "y = x（完全一致）",
+                  line: { color: "#33587a", width: 2.2 }, hoverinfo: "skip" });
+    traces.push({ type: "scatter", mode: "lines", x: [null, null], y: [null, null], name: "±1.5× 参考线",
+                  line: { color: "#8fa6bb", width: 1.5, dash: "dash" }, hoverinfo: "skip" });
+    if (sd !== null) {
+      traces.push({ type: "scatter", mode: "lines", x: [null, null], y: [null, null],
+                    name: "±2σ / ±3σ（Δ 的 sd = " + fmt(sd, 2) + "）",
+                    line: { color: "#aab4c0", width: 1.2, dash: "dot" }, hoverinfo: "skip" });
+    }
+    const toS = isLog ? (v) => v : (v) => Math.log10(Math.max(v, 1e-12));
+    // 画布字号：图幅现在是满宽 + 6:5（绘图区约 4:3），沿用旧的 12px 会显得字小，
+    // 所以刻度/轴标题/图例统一提到 14，悬停 14.5，自动标注名字另见 labelFontSize()。
+    const CHART_FONT = 15;
+    const layout = {
+      margin: { l: 74, r: 20, t: 34, b: 62 },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      xaxis: { title: { text: pair.left_axis + " · " + pair.value_label + pair.unit, font: { size: CHART_FONT } },
+               tickfont: { size: CHART_FONT },
+               automargin: true, type: isLog ? "linear" : "log", range: [toS(loB), toS(hiB)],
+               gridcolor: "#eef2f6", zeroline: false, exponentformat: "power" },
+      yaxis: { title: { text: pair.right_axis + " · " + pair.value_label + pair.unit, font: { size: CHART_FONT } },
+               tickfont: { size: CHART_FONT },
+               automargin: true, type: isLog ? "linear" : "log", range: [toS(loB), toS(hiB)],
+               gridcolor: "#eef2f6", zeroline: false, exponentformat: "power" },
+      shapes: shapes, annotations: [],
+      legend: { orientation: "h", y: -0.18, font: { size: CHART_FONT }, itemsizing: "constant" },
+      hoverlabel: { bgcolor: "#ffffff", bordercolor: "#cfd8e3",
+                    font: { color: "#000000", size: 15.5 } },
+      hovermode: "closest", showlegend: true
+    };
+    const labels = [];
+    markedRows().forEach((g) => g.rows.forEach((r) => {
+      if (r.kind === "both") labels.push({ text: r.gn || r.acc, point: r, color: g.group.color });
+    }));
+    if (bait && bait.kind === "both") labels.push({ text: bait.gn, point: bait, color: DATA.colors.bait });
+    const taken = labels.map((l) => l.point);
+    const ranked = both.filter((r) => taken.indexOf(r) < 0 && r.gn)
+      .sort((a, b) => ((b.x + b.y) / 2) - ((a.x + a.y) / 2));
+    ranked.slice(0, state.labelTop).forEach((r) => labels.push({ text: r.gn, point: r }));
+    return { traces: traces, layout: layout, labels: labels, loB: loB, hiB: hiB };
+  }
+
+  const gd = host.querySelector("#plot");
+  // 第二遍：拿到真实绘图区尺寸后规划名字位置；缩放/平移之后也要重来一遍，
+  // 否则名字还是按"没放大"时的尺度摆的——放大 1.7 倍，引线在屏幕上也就长了 1.7 倍。
+  function labelsPass(fig, spec) {
+    const size = gd._fullLayout && gd._fullLayout._size;
+    if (!size) return;
+    const xa = gd._fullLayout.xaxis, ya = gd._fullLayout.yaxis;
+    // 规划用"当前看得见的范围"：缩放后点云变稀疏，名字就能靠近自己的点
+    const xr = ((xa && xa.range) || [fig.loB, fig.hiB]).slice();
+    const yr = ((ya && ya.range) || [fig.loB, fig.hiB]).slice();
+    // 点云索引：名字要避开点，用来回答“这个框附近有几个点”（比粗网格墨水精确）
+    const near = dotBuckets(both.map((r) => ({ x: r.x, y: r.y })), xr, yr, size.w, size.h, 16);
+    const guides = [0, delta, -delta];          // y = x、y = x ± 1.5×
+    const taken = [];
+    const leaderSegs = [];                      // 已画的引线，后面规划时用来避让
+    const heavyPts = [];                        // 自己带名字的点（诱饵 + 手工标记）：名字框要避开
+    const traces = [];
+    let drawn = 0, wanted = 0;
+
+    // 诱饵优先（它是读者第一眼要找的点）
+    if (baitRow && baitRow.kind === "both") {
+      heavyPts.push(baitRow);
+      const plan = planCallouts([baitRow], xr, yr, 1, taken, 11, near, guides, size.w, size.h,
+                                { gate: Infinity, heavy: heavyPts, leaders: leaderSegs });
+      plan.forEach((t) => taken.push(t.box));
+      traces.push.apply(traces, calloutTraces(plan, DATA.colors.bait, 13, hover));
+      drawn += plan.length; wanted += 1;
+    }
+    // 手工标记：按组上色，优先于自动名字
+    markedRows().forEach((g) => {
+      const pts = g.rows.filter((r) => r.kind === "both");
+      if (!pts.length) return;
+      pts.forEach((r) => heavyPts.push(r));
+      const plan = planCallouts(pts, xr, yr, pts.length, taken,
+                                labelFontSize(pts.length), near, guides, size.w, size.h,
+                                { gate: Infinity, maxLeader: 60, heavy: heavyPts,
+                                  leaders: leaderSegs });
+      plan.forEach((t) => taken.push(t.box));
+      traces.push.apply(traces, calloutTraces(plan, g.group.color, labelFontSize(pts.length),
+                                              hover));
+      drawn += plan.length; wanted += pts.length;
+    });
+    // 自动名字：按"两侧都高"排序，数量由 Label 数量决定。这一档有硬门槛：
+    // 框附近有 4 个以上的点、或者名字被迫推得太远（引线 > 60px）的，干脆不画。
+    const markedSet = new Set();
+    markedRows().forEach((g) => g.rows.forEach((r) => markedSet.add(r)));
+    const ranked = both.filter((r) => !markedSet.has(r) && r !== baitRow && r.gn)
+      .sort((a, b) => ((b.x + b.y) / 2) - ((a.x + a.y) / 2));
+    if (state.labelTop > 0 && ranked.length) {
+      const plan = planCallouts(ranked, xr, yr, state.labelTop, taken,
+                                labelFontSize(state.labelTop), near, guides, size.w, size.h,
+                                { gate: 3, maxLeader: 45, heavy: heavyPts, leaders: leaderSegs });
+      traces.push.apply(traces, calloutTraces(plan, null, labelFontSize(state.labelTop), hover));
+      drawn += plan.length; wanted += Math.min(state.labelTop, ranked.length);
+    }
+    host.querySelector("#label-note").textContent =
+      (state.labelTop === 0 && !state.manual.length) ? "未标名字"
+      : "已标 " + drawn + " / 想标 " + wanted + " 个（名字放在点左右两侧，压住点云或离得太远的就不画）";
+    // 保留用户当前的缩放窗口：只把名字那一层换掉
+    const layout = Object.assign({}, fig.layout, {
+      xaxis: Object.assign({}, fig.layout.xaxis, { range: xr }),
+      yaxis: Object.assign({}, fig.layout.yaxis, { range: yr }),
+    });
+    Plotly.react(gd, fig.traces.concat(traces), layout, spec);
+    bindRelayout();
+  }
+
+  function spec4() {
+    return { displaylogo: false, responsive: true,
+             modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d", "toImage"],
+             modeBarButtonsToAdd: [pdfButton(pair.label)] };
+  }
+
+  function draw() {
+    const fig = buildFigure();
+    const spec = spec4();
+    const go = gd._fullLayout ? Plotly.react(gd, fig.traces, fig.layout, spec)
+                              : Plotly.newPlot(gd, fig.traces, fig.layout, spec);
+    Promise.resolve(go).then(() => labelsPass(fig, spec));
+  }
+
+  // 缩放/平移/窗口尺寸变化后重算名字：否则引线在屏幕上的长度会跟着放大倍数一起变长。
+  // 注意必须等第一次画完再绑：plotly 是在 newPlot 之后才把 .on 挂到 div 上的，
+  // 在它之前调 gd.on 会抛 "gd.on is not a function"（症状跟"看不到图"一样）。
+  let replanning = false, relayoutBound = false, resizeTimer = null;
+  function bindRelayout() {
+    if (relayoutBound || typeof gd.on !== "function") return;
+    relayoutBound = true;
+    gd.on("plotly_relayout", (e) => {
+      const zoomed = Object.keys(e || {}).some((k) => /^(xaxis|yaxis)\.(range|autorange)/.test(k));
+      if (!zoomed || replanning) return;
+      replanning = true;
+      setTimeout(() => {                     // 连续拖动时只算最后一下
+        replanning = false;
+        if (gd._fullLayout) labelsPass(buildFigure(), spec4());
+      }, 220);
+    });
+  }
+  window.addEventListener("resize", () => {             // 宽度变了 → 像素尺度变了
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (gd._fullLayout) labelsPass(buildFigure(), spec4()); }, 350);
+  });
+
+  renderMarks();
+  renderPending();
+  renderTable();
+  draw();
+}
+
+// 首屏渲染放在脚本最后：renderPair 会读 PDF_ICON 等 const，早于它们的初始化会
+// 触发 "Cannot access 'X' before initialization" —— 症状是页面和表格都在、散点图空白。
+// 兜底：渲染失败时在页面上直接写明原因，别让人面对一块说不清的空白。
+try {
+  activate(0);
+} catch (err) {
+  const banner = document.createElement("p");
+  banner.style.cssText = "color:#c92a2a;font-weight:620;margin:12px 26px";
+  banner.textContent = "报告渲染失败：" + err.message + " —— 请把这条信息反馈（图形库或模板版本不匹配时会这样）。";
+  document.querySelector("main").prepend(banner);
+  console.error("bioid-repeat render failed", err);
+}
+</script>
+</body>
+</html>

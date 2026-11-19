@@ -1,0 +1,15 @@
+# contaminants.tsv —— 污染物清单（可选，--contaminants 指定）
+#
+# 每行：<field>  <正则>      field ∈ {description, gn}；忽略大小写。
+# description 匹配 Description 列，gn 匹配从 Description 抽出的基因名。
+# 命中的行写入输出的 Removed 表（含命中的规则），不会静默消失。
+#
+# 这里的清单只做「角蛋白」这一层，权威的系统性污染物过滤交给 bioid-analysis
+# （CRAPome 频率表 + 阈值），不要在这里重复实现。
+description	Keratin
+description	Keratin-associated
+gn	^KRT
+#
+# 需要时按本实验室情况补充，例如消化酶、载体蛋白：
+# description	Trypsin
+# description	^Albumin

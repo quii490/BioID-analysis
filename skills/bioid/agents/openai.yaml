@@ -1,0 +1,4 @@
+interface:
+  display_name: "BioID Preprocessing"
+  short_description: "Raw BioID exports to +5%/Proteins/Raw workbooks"
+  default_prompt: "Use $bioid to preprocess this BioID batch into workbooks, using an explicit bait/EV channel map."

@@ -1,0 +1,2195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BioID analysis report</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --panel: #ffffff; --ink: #17212e; --muted: #64748b;
+    --line: #e2e8f0; --pass: #157a48; --warn: #b26a00; --chip: #eef2f7;
+    --accent: #2b6cb0; --shadow: 0 1px 2px rgba(15, 32, 52, .05), 0 4px 14px rgba(15, 32, 52, .04);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+  header { background: linear-gradient(135deg, #0f2437 0%, #1b3f61 62%, #23557f 100%);
+           color: #fff; padding: 20px 26px 16px; }
+  header h1 { margin: 0 0 5px; font-size: 21px; font-weight: 650; letter-spacing: .2px; }
+  header .sub { color: #b9cbdc; font-size: 12.5px; }
+  header .badges { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.20);
+           border-radius: 999px; padding: 3px 11px; font-size: 12px; color: #e7eef6; }
+  .badge b { font-weight: 650; }
+  /* Screen-only hints are hidden when the page is printed (see @media print). */
+  .screen-only { display: inline; }
+  .capbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+            justify-content: space-between; }
+  .pickbar { display: flex; gap: 8px; align-items: center; }
+  .headrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  /* Printing is the browser's own job now: the open panel prints as it looks on
+     screen, with the interactive chrome and the header hints removed. */
+  @page { size: letter landscape; margin: 10mm; }
+  @media print {
+    header { background: #ffffff !important; color: #17212e !important; padding: 0 0 10px; }
+    header h1 { font-size: 18px; }
+    header .sub, header .badges { color: #4a5b6e !important; }
+    .badge { background: #f1f5f9 !important; border-color: #d8e0ea !important; color: #33475b !important; }
+    .tabs, .toolbar, .btn, .modebar, footer, .suggest, #label-note, .pickbar { display: none !important; }
+    body { background: #ffffff; font-size: 11px; }
+    main { padding: 0; width: 960px !important; margin: 0 auto; }
+    /* Print what is on screen: the open panel only, so a stray Cmd+P does not
+       emit a dozen empty shells. */
+    .panel.active { display: block !important; position: static !important; width: auto !important; }
+    .card { box-shadow: none; border-color: #dbe3ec; }
+
+    .scroll { max-height: none !important; overflow: visible !important; }
+    .screen-only { display: none !important; }
+    table { font-size: 8.5px; }
+    th, td { padding: 3px 5px; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+    /* The overview table has more columns than fit a page. Rather than squeeze
+       every cell (which makes the text unreadable), the two diagnostic load
+       columns are dropped on paper — the workbook keeps them — and the font
+       shrinks a little. */
+    .scroll table.wide { font-size: 7.5px; }
+    .scroll table.wide th:nth-child(6), .scroll table.wide td:nth-child(6),
+    .scroll table.wide th:nth-child(8), .scroll table.wide td:nth-child(8) {
+      display: none !important; }
+    .keep-together, .cards, .banner, .capbar { page-break-inside: avoid; break-inside: avoid; }
+    /* A heading must not be stranded at the foot of a page with its list overleaf. */
+    h3, h4 { break-after: avoid; page-break-after: avoid; }
+    li { break-inside: avoid; page-break-inside: avoid; }
+    /* The candidate table used to run off the right edge and clip its last column
+       (the CRAPome frequency). Fixed layout with explicit widths — the description
+       takes the slack and wraps — keeps every column on the page. */
+    #cand-table { table-layout: fixed; width: 100%; }
+    #cand-table td, #cand-table th { overflow-wrap: anywhere; }
+    #cand-table .screen-only { display: none !important; }
+    #cand-table { font-size: 8px; }
+    #cand-table th:nth-child(1) { width: 62px; }    /* Gene */
+    #cand-table th:nth-child(2) { width: 78px; }    /* Accession: "Accession" must fit */
+    #cand-table th:nth-child(4) { width: 74px; }    /* FC: "≥ 1750.923" needs the room */
+    #cand-table th:nth-child(5) { width: 52px; }    /* log2FC */
+    #cand-table th:nth-child(6) { width: 64px; }    /* raw FC */
+    #cand-table th:nth-child(8), #cand-table th:nth-child(9),
+    #cand-table th:nth-child(10) { width: 56px; }   /* SAINT, BFDR, q */
+    #cand-table th:nth-child(11), #cand-table th:nth-child(12) { width: 46px; }
+    #cand-table th:nth-child(13) { width: 56px; }   /* CRAPome % */
+    #cand-table th:nth-child(14), #cand-table th:nth-child(15) { width: 52px; } /* QC score, Background */
+    #cand-table th:nth-child(16) { width: 66px; }   /* Cross-sample */
+    thead { break-after: avoid; }
+    .capbar { page-break-after: avoid; }
+    th { position: static; }
+    tr:hover td, tbody tr:nth-child(even) td { background: transparent !important; }
+    a { text-decoration: none; }
+  }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 26px 12px; background: #1b3f61; }
+  .tabs button { border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.07);
+                 color: #dbe6f0; border-radius: 999px; padding: 6px 14px; font-size: 12.5px;
+                 cursor: pointer; transition: background .15s, color .15s; }
+  .tabs button:hover { background: rgba(255,255,255,.16); }
+  .tabs button.active { background: #fff; color: #14314d; font-weight: 620; border-color: #fff; }
+  main { padding: 20px 26px 60px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+          padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .cards .card { margin: 0; padding: 13px 15px; border-top: 3px solid var(--accent); }
+  .kpi { font-size: 23px; font-weight: 660; letter-spacing: -.2px; }
+  .kpi.small { font-size: 18px; }
+  .lbl { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 14px;
+             background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+             padding: 12px 16px; box-shadow: var(--shadow); }
+  .toolbar label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  select { font: inherit; padding: 5px 9px; border: 1px solid #cfd8e3; border-radius: 7px;
+           background: #fff; color: var(--ink); cursor: pointer; }
+  select:focus { outline: 2px solid #bcd3ea; outline-offset: 1px; }
+  .btn { font: inherit; font-size: 12.5px; padding: 6px 12px; border: 1px solid #cfd8e3;
+         border-radius: 7px; background: #f8fafc; color: #33475b; cursor: pointer; }
+  .btn:hover { background: #eef4fa; }
+  .markbox { flex: 1 1 380px; min-width: 300px; position: relative; }
+  .markinput { position: relative; }
+  .markinput input { width: 100%; font: inherit; padding: 6px 10px; border: 1px solid #cfd8e3;
+                     border-radius: 7px; background: #fff; color: var(--ink); }
+  .markinput input:focus { outline: 2px solid #bcd3ea; outline-offset: 1px; }
+  .suggest { position: absolute; z-index: 30; top: calc(100% + 2px); left: 0; right: 0;
+             background: #fff; border: 1px solid var(--line); border-radius: 8px; display: none;
+             max-height: 240px; overflow: auto; box-shadow: 0 6px 18px rgba(15,32,52,.14); }
+  .suggest.show { display: block; }
+  .suggest div { padding: 6px 10px; font-size: 13px; cursor: pointer; display: flex;
+                 justify-content: space-between; gap: 10px; }
+  .suggest div:hover, .suggest div.active { background: #eef4fa; }
+  .suggest span.acc { color: var(--muted); font-size: 12px; }
+  .pending { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-basis: 100%; }
+  .pending:not(:empty)::before { content: "to mark:"; color: var(--muted); font-size: 12px; }
+  .pend-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+               background: #eef4fa; border: 1px solid #cfd8e3; border-radius: 999px; padding: 2px 6px 2px 9px; }
+  .pend-chip button, .mark-chip button { border: none; background: none; cursor: pointer;
+                                         color: #8a94a6; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .pend-chip button:hover, .mark-chip button:hover { color: #b02a2a; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-basis: 100%; }
+  td.sel { cursor: pointer; }
+  tr.picked td { background: #eaf3ec !important; }
+  .mark-chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px;
+               border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+               background: #fbfcfe; color: #33475b; }
+  .mark-chip .swatch { width: 16px; height: 16px; padding: 0; border-radius: 50%;
+                       border: 1px solid rgba(0,0,0,.15); background: none; cursor: pointer;
+                       -webkit-appearance: none; appearance: none; }
+  .mark-chip .swatch::-webkit-color-swatch-wrapper { padding: 0; }
+  .mark-chip .swatch::-webkit-color-swatch { border: none; border-radius: 50%; }
+  .mark-chip .swatch::-moz-color-swatch { border: none; border-radius: 50%; }
+  .mark-chip .miss { color: var(--warn); }
+  .mark-chip button { border: none; background: none; cursor: pointer; color: #8a94a6;
+                      font-size: 14px; line-height: 1; padding: 0 2px; }
+  .mark-chip button:hover { color: #b02a2a; }
+  .legend-note { color: var(--muted); font-size: 12.5px; }
+  .banner { display: none; border-left: 4px solid var(--warn); background: #fffaf1; padding: 11px 15px;
+            border-radius: 9px; margin-bottom: 14px; font-size: 13px; border: 1px solid #f3e3c8;
+            border-left-width: 4px; }
+  .banner.show { display: block; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: right; white-space: nowrap; }
+  th { cursor: pointer; color: #4a5b6e; font-weight: 620; position: sticky; top: 0;
+       background: #f8fafc; border-bottom: 1px solid var(--line); }
+  th:hover { color: var(--accent); }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  tbody tr:nth-child(even) td { background: #fbfcfe; }
+  tbody tr:hover td { background: #f2f7fc; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 1px 8px; font-size: 12px; color: var(--muted); }
+  .scroll { max-height: 460px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; }
+  .notes h3 { margin: 18px 0 6px; font-size: 15px; }
+  table.glossary { table-layout: fixed; }
+  table.glossary th, table.glossary td { white-space: normal; vertical-align: top;
+                                          text-align: left; line-height: 1.45; padding: 8px 10px; }
+  table.glossary code { white-space: nowrap; }
+  .notes ul { margin: 6px 0 0 18px; }
+  .notes li { margin-bottom: 5px; }
+  code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .hw { font-variant-numeric: tabular-nums; }
+  .wrapcell { text-align: left; white-space: normal; min-width: 120px; max-width: 190px; }
+  td.protein { text-align: left; white-space: normal; min-width: 160px; max-width: 300px; color: #3c4a5a; }
+  table.wide th { white-space: normal; vertical-align: bottom; }
+  footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="headrow">
+    <div>
+      <h1>BioID analysis report</h1>
+      <div class="sub" id="subtitle"></div>
+    </div>
+  </div>
+  <div class="badges" id="badges"></div>
+</header>
+<div class="tabs" id="tabs"></div>
+<main id="main"></main>
+<footer id="footer"></footer>
+
+<!--PLOTLY_LIB-->
+<script>
+const DATA = /*DATA*/null;
+
+const STATUS_LABEL = {
+  pass: "Passes all gates",
+  bait_self: "The baited protein itself",
+  lower_bound: "EV not detected — fold change is a lower bound",
+  below_fold: "Below fold-change gate",
+  crapome: "CRAPome contaminant",
+  few_peptides: "Too few unique peptides",
+  not_quantified: "Not quantified in experimental channel",
+  qc_bg: "Batch-QC background suspect (click to hide)",
+};
+const PLOT_ORDER = ["not_quantified", "few_peptides", "below_fold", "crapome", "lower_bound", "pass", "bait_self"];
+
+const fmt = (v, d = 2, suffix = "") =>
+  (v === null || v === undefined || Number.isNaN(v)) ? "–" : v.toFixed(d) + suffix;
+const pct = (v) => (v === null || v === undefined) ? "–" : (100 * v).toFixed(1) + "%";
+
+// Points are shipped as arrays to keep the file small; expand them once.
+function decodePoints(cond) {
+  if (cond._decoded) return cond._decoded;
+  const fields = DATA.pointFields;
+  cond._decoded = cond.points.map((row) => {
+    const obj = {};
+    fields.forEach((name, i) => { obj[name] = row[i]; });
+    obj.crapome = !!obj.crapome;
+    obj.bait_hit = !!obj.bait_hit;
+    obj.pass = !!obj.pass;
+    obj.lb = !!obj.lb;
+    return obj;
+  });
+  return cond._decoded;
+}
+
+// The gates decide who is eligible to be a candidate; this decides the order in
+// which eligible candidates are drawn when more pass than the label limit.
+// 'auto' is two evidence tiers, not a mixture of scales: prey the control never
+// detected come first (a censored observation, ordered by its own floor), then
+// everything measured, by the SAINT-style score when the mixture fitted and by
+// the calibrated q value when it did not. Mixing an unscored prey into a q-ranked
+// list is what made the old labels arbitrary in conditions with no signal, where
+// the q values are one big tie.
+const LABEL_CRITERION = {
+  auto: "evidence tier: EV-undetected first, then by {second}",
+  score: "SAINT-style score",
+  q: "calibrated q value",
+  fold: "EV-corrected fold change",
+  abundance: "experimental abundance",
+  combined: "batch-QC combined score",
+};
+
+function rankKey(p, mode = "auto") {
+  const noScore = p.score === null || p.score === undefined;
+  const noQ = p.q === null || p.q === undefined;
+  switch (mode) {
+    case "score": return noScore ? -1 : p.score;
+    case "q": return noQ ? -1 : 1 - p.q;
+    case "fold": return (p.fc === null || p.fc === undefined) ? -1 : p.fc;
+    case "combined": return (p.qc_combined === null || p.qc_combined === undefined) ? -1 : p.qc_combined;
+    case "abundance": return p.bait || 0;
+    default:
+      if (p.lb) return 2 + Math.log10(Math.max(p.fc || 1, 1));
+      return noScore ? (noQ ? -1 : 1 - p.q) : p.score;
+  }
+}
+
+// The x coordinate a prey is plotted at: the measured control, or the floor it was
+// compared against when the control never detected it.
+function xOf(p) {
+  return (p.cuse !== null && p.cuse !== undefined) ? p.cuse : p.ctrl;
+}
+
+function statusOf(p, minFold, minUp) {
+  if (p.bait === null || p.bait === undefined) return "not_quantified";
+  // The baited protein is never a candidate (its own channel enrichment is the
+  // assay working, not an interaction), so it must not be counted among them. It
+  // keeps its own colour so a reader can find it — and see whether it was
+  // recovered at all — without it inflating the candidate count.
+  if (p.bait_hit) return "bait_self";
+  if (p.crapome) return "crapome";
+  if (p.up < minUp) return "few_peptides";
+  // A prey the control never detected keeps its own class: its ratio is a floor,
+  // not a measurement, so it must not hide among the measured candidates.
+  if (p.lb && p.fc !== null && p.fc !== undefined && p.fc >= minFold) return "lower_bound";
+  if (p.fc === null || p.fc === undefined || p.fc < minFold) return "below_fold";
+  return "pass";
+}
+
+function countsFor(cond, minFold, minUp) {
+  const counts = { pass: [], lower_bound: [], bait_self: [], below_fold: [], crapome: [],
+                   few_peptides: [], not_quantified: [] };
+  for (const p of decodePoints(cond)) counts[statusOf(p, minFold, minUp)].push(p);
+  return counts;
+}
+
+// Candidates = the two classes that pass every gate. They are separate buckets so
+// the plot can colour a censored ratio differently, but every list, count and
+// label in the report means both.
+function passing(counts) {
+  return counts.pass.concat(counts.lower_bound);
+}
+
+// UniProt annotation for one prey: [name, gene, aliases, function] keyed by
+// accession and shared across conditions, so the same protein is described the
+// same way in every panel.
+function annotationFor(p) {
+  const table = DATA.annotations || {};
+  const entry = table[p.acc] || (p.geneHint ? table[p.geneHint] : null);
+  if (!entry) return null;
+  return { name: entry[0] || "", gene: entry[1] || "", aliases: entry[2] || "", func: entry[3] || "" };
+}
+
+// Wrap a paragraph for the hover card: plotly only honours <br>.
+function wrapText(text, width) {
+  if (!text) return "";
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    if (line && (line.length + 1 + word.length) > width) { lines.push(line); line = word; }
+    else { line = line ? line + " " + word : word; }
+  }
+  if (line) lines.push(line);
+  return lines.join("<br>");
+}
+
+// ---------------------------------------------------------------- figure PDF
+// Plotly's camera button exports a PNG; this report offers the same thing as a
+// PDF, containing only the figure. Writing a PDF by hand keeps the report free of
+// npm dependencies (the registry is unreachable here), and a one-image document
+// is the simplest possible PDF: catalog, pages, page, image XObject, content.
+function deflateBytes(bytes) {
+  if (typeof CompressionStream === "function") {
+    return new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate")))
+      .arrayBuffer().then((buf) => new Uint8Array(buf));
+  }
+  return Promise.resolve(null);            // caller falls back to raw samples
+}
+
+function pdfFromImage(rgb, width, height, compressed) {
+  const enc = new TextEncoder();
+  const pageWidth = 720;
+  const pageHeight = Math.round(pageWidth * height / width);
+  const chunks = [];
+  const offsets = [];
+  let length = 0;
+  const put = (part) => {
+    const bytes = typeof part === "string" ? enc.encode(part) : part;
+    chunks.push(bytes);
+    length += bytes.length;
+  };
+
+  put("%PDF-1.4\n");
+  const startObject = (n) => { offsets[n] = length; put(`${n} 0 obj\n`); };
+
+  startObject(1);
+  put("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  startObject(2);
+  put("<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+  startObject(3);
+  put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] `
+    + "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n");
+
+  startObject(4);
+  const filter = compressed ? "/Filter /FlateDecode " : "";
+  const samples = compressed || rgb;
+  put(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} `
+    + `/ColorSpace /DeviceRGB /BitsPerComponent 8 ${filter}/Length ${samples.length} >>\nstream\n`);
+  put(samples);
+  put("\nendstream\nendobj\n");
+
+  const content = `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /Im0 Do Q\n`;
+  startObject(5);
+  put(`<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`);
+
+  const xrefStart = length;
+  let xref = "xref\n0 6\n0000000000 65535 f \n";
+  for (let i = 1; i <= 5; i++) {
+    xref += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+  }
+  put(xref);
+  put(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`);
+
+  const out = new Uint8Array(length);
+  let at = 0;
+  for (const chunk of chunks) { out.set(chunk, at); at += chunk.length; }
+  return out;
+}
+
+// Vector PDF: hand plotly's SVG to jsPDF + svg2pdf and write a real vector PDF — lines stay paths,
+// text stays text, so it zooms cleanly and opens editable in Illustrator. Both libraries (MIT) are
+// inlined into the report, so this needs no network. When they are missing (a hand-edited report, or
+// a --plotly cdn copy that cannot reach the CDN) it returns null and the caller falls back to the
+// old rasterise-then-wrap path, so the button never goes dead.
+async function figurePdfVector(gd) {
+  const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  // svg2pdf 的 UMD 导出是命名空间对象（window.svg2pdf.svg2pdf），不是函数本身
+  const svg2pdfFn = window.svg2pdf && (typeof window.svg2pdf === "function"
+    ? window.svg2pdf
+    : (window.svg2pdf.svg2pdf || (window.svg2pdf.default && window.svg2pdf.default.svg2pdf)));
+  if (!jsPDFCtor || typeof svg2pdfFn !== "function") return null;
+  const width = Math.max(600, Math.round(gd._fullLayout.width));
+  const height = Math.max(360, Math.round(gd._fullLayout.height));
+  const dataUrl = await Plotly.toImage(gd, { format: "svg", width, height });
+  const body = String(dataUrl).split(",")[1] || "";
+  let svgText = /;base64/i.test(String(dataUrl)) ? atob(body) : decodeURIComponent(body);
+  // 中文字形：内嵌 Noto Sans SC 子集（SIL OFL，随报告内联）。jsPDF 自带字体没有 CJK 字形，
+  // 所以把 SVG 里的 font-family 一律改写到注册名 —— 必须整串替换，因为大量文本是从上层 <g>
+  // 继承字体（只改 <text> 自身会漏掉它们，PDF 里中文仍是乱码）。
+  const notoReady = typeof NOTO_FONT_B64 === "string" && NOTO_FONT_B64.length > 1000;
+  if (notoReady) {
+    svgText = svgText
+      .replace(/font-family\s*=\s*"[^"]*"/gi, 'font-family="NotoSansSC"')
+      .replace(/font-family\s*:\s*[^;"]*/gi, "font-family:NotoSansSC");
+  }
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:fixed;left:-10000px;top:0;width:" + width + "px;height:" + height + "px;";
+  holder.innerHTML = svgText;
+  document.body.appendChild(holder);
+  try {
+    const svg = holder.querySelector("svg");
+    if (!svg) return null;
+    const pt = (v) => (v * 72) / 96;   // plotly measures in CSS pixels (96dpi), PDF units are points (72dpi)
+    const doc = new jsPDFCtor({
+      unit: "pt",
+      format: [pt(width), pt(height)],
+      orientation: width >= height ? "landscape" : "portrait",
+      compress: true,
+    });
+    // 中文字形：内嵌 Noto Sans SC 子集（SIL OFL，随报告内联），并把 SVG 的 font-family 指到它 ——
+    // jsPDF 自带字体没有 CJK，不改写的话图例/轴标题里的中文会变乱码。缺这一块时退回标准字体。
+    if (notoReady) {
+      // jsPDF 2.x 必须先写进它的虚拟文件系统，再用"文件名"注册字体 —— 直接传 base64 当文件名
+      // 会静默降级（内部报 "Font is not stored as string-data in vFS"），PDF 里中文仍变乱码。
+      doc.addFileToVFS("NotoSansSC.ttf", NOTO_FONT_B64);
+      doc.addFont("NotoSansSC.ttf", "NotoSansSC", "normal");
+      doc.addFont("NotoSansSC.ttf", "NotoSansSC", "bold");
+      doc.setFont("NotoSansSC", "normal");
+    }
+    await svg2pdfFn(svg, doc, { x: 0, y: 0, width: pt(width), height: pt(height) });
+    return new Uint8Array(doc.output("arraybuffer"));
+  } finally {
+    document.body.removeChild(holder);
+  }
+}
+
+// Rasterise one figure and return the PDF bytes.
+async function figurePdfBytes(gd) {
+  const width = Math.max(600, Math.round(gd._fullLayout.width));
+  const height = Math.max(360, Math.round(gd._fullLayout.height));
+  const scale = 2;
+  const dataUrl = await Plotly.toImage(gd, { format: "png", width, height, scale });
+  const img = await new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = dataUrl;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";                       // PDF images carry no alpha
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const rgb = new Uint8Array(canvas.width * canvas.height * 3);
+  for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
+    rgb[j] = rgba[i]; rgb[j + 1] = rgba[i + 1]; rgb[j + 2] = rgba[i + 2];
+  }
+  const compressed = await deflateBytes(rgb);
+  return pdfFromImage(rgb, canvas.width, canvas.height, compressed);
+}
+
+function downloadBytes(bytes, filename, mime) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function toBase64(bytes) {
+  let text = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    text += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(text);
+}
+
+const PDF_ICON = {
+  width: 24, height: 24, path: "M5 3h9l5 5v13H5z M14 3v5h5 "
+    + "M8 13h8 M8 16h8 M8 10h3",
+};
+
+function pdfButton(host) {
+  return {
+    name: "toPdf",
+    title: "Download this figure as vector PDF",
+    icon: PDF_ICON,
+    click: async function (gd) {
+      const button = gd.querySelector('[data-title="Download this figure as vector PDF"]');
+      const name = (DATA.conditions.find((c) => gd.id === "plot-" + DATA.conditions.indexOf(c)) || {}).condition
+        || "figure";
+      try {
+        let bytes = await figurePdfVector(gd);
+        if (!bytes) {
+          if (button) button.title = "vector libraries unavailable — fell back to a raster PDF";
+          bytes = await figurePdfBytes(gd);
+        }
+        downloadBytes(bytes, name + "_scatter.pdf", "application/pdf");
+      } catch (err) {
+        if (button) button.title = "PDF export failed: " + err.message;
+        console.error("figure PDF export failed", err);
+      }
+    },
+  };
+}
+
+// Hover text is preformatted so that missing values never print as "null".
+function hoverFields(p, minFold, minUp) {
+  const status = statusOf(p, minFold, minUp);
+  const crapome = (p.cfreq === null || p.cfreq === undefined)
+    ? "CRAPome not applied"
+    : `CRAPome ${pct(p.cfreq)} (${p.chits ?? "–"}/${p.cruns ?? "–"} ${DATA.thresholds.crapomeCell} controls ≥${DATA.thresholds.crapomeMinSc} SC)`;
+  const ann = annotationFor(p);
+  const header = [];
+  if (ann && ann.name) header.push(`<br><span style="color:#2f3f52">${ann.name}</span>`);
+  else if (p.name) header.push(`<br><span style="color:#2f3f52">${p.name}</span>`);
+  if (ann && ann.aliases) header.push(`<br><i style="color:#7a8794">also known as</i> ${ann.aliases}`);
+  if (ann && ann.func) {
+    header.push(`<br><span style="color:#4a5b6e">${wrapText(ann.func, 74)}</span>`);
+  }
+  return [
+    p.gn, p.acc, header.join(""),
+    (p.lb ? "≥ " : "") + fmt(p.fc, 2, "×"), fmt(p.fc_raw, 2, "×"),
+    String(p.up), String(p.pep ?? "–"), String(p.psm ?? "–"),
+    fmt(p.score, 3), fmt(p.bfdr, 3), fmt(p.q, 4),
+    crapome,
+    STATUS_LABEL[status] + (p.why ? " — " + p.why : ""),
+    p.lb
+      ? `<br><span style="color:#0b7285">EV not detected — EV-corrected FC is a lower bound (floor ${fmt(p.cuse, 0)})</span>`
+      : "",
+    (p.qc_combined === null || p.qc_combined === undefined) && !p.qc_bg_flag && !p.qc_cross
+      ? ""
+      : `<br><span style="color:#c92a2a">batch QC: combined score ${fmt(p.qc_combined, 3)}`
+        + `${p.qc_bg_flag ? " · " + p.qc_bg_flag : ""}`
+        + `${p.qc_cross ? " · " + p.qc_cross : ""}</span>`,
+    fmt(p.log2fc, 2),
+  ];
+}
+
+const HOVER_TEMPLATE =
+  "<b style=\"font-size:14px\">%{customdata[0]}</b>" +
+  " <span style=\"color:#7a8794\">%{customdata[1]}</span>" +
+  "%{customdata[2]}" +
+  "<br><span style=\"color:#aab4c0\">────────────────────</span>" +
+  "<br>EV-corrected FC <b>%{customdata[3]}</b>  ·  log2 %{customdata[15]}  ·  raw %{customdata[4]}" +
+  "<br>unique peptides %{customdata[5]} · peptides %{customdata[6]} · PSMs %{customdata[7]}" +
+  "<br>SAINT-style score %{customdata[8]} · BFDR %{customdata[9]} · q %{customdata[10]}" +
+  "<br>%{customdata[11]}" +
+  "%{customdata[13]}" +
+  "%{customdata[14]}" +
+  "<br><span style=\"color:#b26a00\">%{customdata[12]}</span><extra></extra>";
+
+// ---------------------------------------------------------------- overview
+function renderOverview(container) {
+  const minUp = DATA.thresholds.minUniquePeptides;
+  const rows = DATA.conditions.map((c) => {
+    const counts = countsFor(c, DATA.thresholds.minFold, minUp);
+    const pass = passing(counts).slice().sort((a, b) => rankKey(b) - rankKey(a));
+    return {
+      cond: c, counts,
+      quantified: decodePoints(c).filter((p) => p.bait).length,
+      pass: pass.length,
+      top: pass.slice(0, 3).map((p) => p.gn).join(", "),
+    };
+  });
+  const totalPass = rows.reduce((s, r) => s + r.pass, 0);
+
+  container.innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="lbl">Conditions</div><div class="kpi">${rows.length}</div></div>
+      <div class="card"><div class="lbl">Candidates (all gates)</div><div class="kpi" style="color:var(--pass)">${totalPass}</div></div>
+      <div class="card"><div class="lbl">Fold gate</div><div class="kpi small">≥ ${DATA.thresholds.minFold}×</div></div>
+      <div class="card"><div class="lbl">Unique peptides</div><div class="kpi small">≥ ${minUp}</div></div>
+      <div class="card"><div class="lbl">CRAPome</div><div class="kpi small">${DATA.crapome.applied ? "applied" : "not applied"}</div></div>
+    </div>
+    <div class="card">
+      <div class="lbl" style="margin-bottom:8px">Per-condition summary</div>
+      <div class="scroll" style="max-height:none"><table class="wide">
+        <thead><tr>
+          <th>Condition</th><th>File</th><th>Experimental</th><th>Control</th>
+          <th>Quantified prey</th>
+          <th>Summed-signal ctrl/exp<span class="chip">diagnostic</span></th>
+          <th>Correction applied, log2<span class="chip">${DATA.thresholds.normalize}</span></th>
+          <th>Scale applied ×</th>
+          <th>CRAPome</th>
+          <th>Candidates<span class="chip">applied gate</span></th>
+          <th>Candidates by estimator<span class="chip">median/robust/total</span></th>
+          <th>Top candidates</th>
+        </tr></thead>
+        <tbody>${rows.map((r) => `<tr>
+          <td><b>${r.cond.condition}</b></td><td>${r.cond.file}</td>
+          <td>${r.cond.expChannel}</td><td>${r.cond.ctrlChannel}</td>
+          <td class="hw">${r.quantified}</td>
+          <td class="hw">${fmt(r.cond.diagnostics.load_ratio_total, 2, "×")}</td>
+          <td class="hw">${fmt(r.cond.diagnostics.correction_log2, 2)}</td>
+          <td class="hw">${fmt(2 ** -(r.cond.diagnostics.correction_log2), 2, "×")}</td>
+          <td class="hw">${r.counts.crapome.length}</td>
+          <td class="hw" style="color:var(--pass);font-weight:600">${r.pass}</td>
+          <td class="hw">${["median", "robust", "total"].map((m) => r.cond.modeCounts && r.cond.modeCounts[m] !== undefined ? r.cond.modeCounts[m] : "–").join(" / ")}</td>
+          <td class="wrapcell">${r.top || "–"}</td></tr>`).join("")}
+        </tbody></table></div>
+      <p class="legend-note">Load columns are different quantities by design, and the candidate count depends on
+      the load estimator — see <b>Methods &amp; caveats → How the numbers are computed</b>.</p>
+      ${DATA.qcAttached ? "" : `<p class="legend-note" style="color:#c92a2a"><b>批次 QC 未接入</b>：本次输入没有
+        batch-QC 追加的列，因此候选表缺 Combined score / Background flag / Cross-sample QC 三列，散点图也不会
+        标出疑似背景点。先跑 <b>bioid-batch-qc</b>，再用 <b>--from-qc</b>（或把工作簿放在 flagged/ 下让它自动
+        探测）重新分析即可接入。</p>`}
+    </div>
+    <div class="card keep-together"><div id="ov-plot" style="height:430px"></div></div>`;
+
+  const traces = PLOT_ORDER.filter((k) => k !== "not_quantified").map((key) => ({
+    type: "bar", name: STATUS_LABEL[key],
+    x: rows.map((r) => r.cond.condition),
+    y: rows.map((r) => r.counts[key].length),
+    marker: { color: DATA.colors[key] },
+    hovertemplate: "%{x}<br>" + STATUS_LABEL[key] + ": %{y}<extra></extra>",
+  }));
+  Plotly.newPlot("ov-plot", traces, {
+    barmode: "stack", title: { text: "Prey status per condition", font: { size: 14 } },
+    margin: { l: 60, r: 20, t: 40, b: 120 }, paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    yaxis: { title: "prey proteins" },
+    xaxis: { tickangle: -45, tickfont: { size: 10.5 }, automargin: true },
+    legend: { orientation: "h", y: -0.34 },
+  }, { displaylogo: false, responsive: true });
+}
+
+// --------------------------------------------------------------- condition
+function renderCondition(container, index) {
+  const cond = DATA.conditions[index];
+  const minUp = DATA.thresholds.minUniquePeptides;
+  const noise = cond.noise || {};
+  // Marks are view state the user builds by hand, so losing them on every
+  // reload was a trap (a refreshed page showed no marks and no leader lines).
+  // localStorage keeps them per batch and condition; file:// pages share one
+  // storage area, so the key carries the folder and condition.
+  const MARK_KEY = "bioid-marks:" + (DATA.folder || "") + ":" + cond.condition;
+  const loadMarks = () => {
+    try { const raw = JSON.parse(localStorage.getItem(MARK_KEY) || "[]");
+      return Array.isArray(raw) ? raw.filter((g) => g && g.color && Array.isArray(g.names)) : [];
+    } catch (e) { return []; }
+  };
+  const saveMarks = () => {
+    try { localStorage.setItem(MARK_KEY, JSON.stringify(state.manual)); } catch (e) { /* private mode etc. */ }
+  };
+  const state = { minFold: DATA.thresholds.minFold, colorBy: "status", labelTop: 10,
+                  labelBy: "auto", manual: loadMarks() };
+  // Every panel has its own host, because the PDF export renders all conditions
+  // at once — a shared #plot id would make the zoom handler act on the wrong one.
+  const plotHost = () => container.querySelector(".plot-host");
+
+  container.innerHTML = `
+    <div class="banner" id="banner"></div>
+    <div class="cards" id="kpis"></div>
+    <div class="toolbar">
+      <label>Enrichment gate
+        <select id="fold">
+          ${[1, 1.5, 2, 3, 5].map((v) => `<option value="${v}" ${v === state.minFold ? "selected" : ""}>≥ ${v}×</option>`).join("")}
+        </select>
+      </label>
+      <label>Colour by
+        <select id="colorby">
+          <option value="status">Status</option>
+          <option value="score">SAINT-style score</option>
+          <option value="crapome">CRAPome frequency</option>
+        </select>
+      </label>
+      <label>Label candidates
+        <select id="labeltop">
+          ${[0, 5, 10, 20, 40, 100, 200].map((v) => `<option value="${v}" ${v === 10 ? "selected" : ""}>up to ${v}</option>`).join("")}
+        </select>
+      </label>
+      <label title="Which candidates get their name drawn. The gates decide who is eligible; this decides the order names are drawn in when more pass than the label limit.">
+        Label by
+        <select id="label-by">
+          <option value="auto" selected>evidence tier</option>
+          <option value="score">SAINT-style score</option>
+          <option value="q">q value</option>
+          <option value="fold">fold change (EV-corrected)</option>
+          <option value="abundance">abundance</option>
+          <option value="combined">batch-QC combined score</option>
+        </select>
+      </label>
+      <span class="legend-note" id="label-note" style="align-self:flex-end;padding-bottom:6px"></span>
+      <button class="btn" id="reset-zoom" type="button">Reset zoom</button>
+      <label>Wheel
+        <select id="wheel-mode">
+          <option value="scroll" selected>scrolls the page</option>
+          <option value="zoom">zooms the plot</option>
+        </select>
+      </label>
+      <span class="legend-note">Hover a point for details · drag a box to zoom (labels thin out or fill in as you zoom) ·
+        the wheel scrolls the page</span>
+    </div>
+    <div class="toolbar">
+      <div class="markbox">
+        <label for="mark-input">Mark proteins — type to search, click a match to add</label>
+        <div class="markinput">
+          <input type="text" id="mark-input" autocomplete="off"
+                 placeholder="gene symbol or accession, e.g. MGA or Q8IWI9">
+          <div class="suggest" id="mark-suggest"></div>
+        </div>
+      </div>
+      <label>Colour
+            <input type="color" id="manual-color" value="#8e44ad">
+      </label>
+      <button class="btn" id="manual-add" type="button">Add mark</button>
+      <button class="btn" id="manual-clear" type="button">Clear marks</button>
+      <div class="pending" id="mark-pending"></div>
+      <div id="manual-chips" class="chips"></div>
+    </div>
+    <div class="card keep-together"><div class="plot-host" id="plot-${index}"></div></div>
+    <div class="card">
+      <div class="capbar">
+        <div class="lbl" id="cand-caption"></div>
+        <div class="pickbar">
+          <span class="legend-note" id="sel-note">click rows to pick proteins</span>
+          <button class="btn" id="mark-selected" type="button">Add picked to mark list</button>
+        </div>
+      </div>
+      <div class="scroll" style="margin-top:8px"><table id="cand-table"></table></div>
+    </div>`;
+
+  const notes = [];
+  for (const w of cond.diagnostics.warnings) notes.push(w);
+  if (!cond.saint.fitted) {
+    notes.push(`<b>No SAINT-style score for this condition.</b> ${cond.saint.reason}. `
+      + "The calibrated q-value in the table below comes from the empirical null alone and does not "
+      + "depend on the mixture, so it remains valid here. Prey the control never detected carry no "
+      + "q at all — a censored ratio is not a test — so those rows show a dash and are ordered "
+      + "first by their lower-bound fold change.");
+    if (cond.model) {
+      notes.push(`mixture fit that was rejected: π=${fmt(cond.model.pi, 3)}, fitted shift `
+        + `${fmt(cond.model.mu1, 2)} log2, background mean/sd ${fmt(cond.model.mu0, 2)}/`
+        + `${fmt(cond.model.sigma0, 2)} log2 (${fmt(cond.model.separation_sigma, 2)} σ apart)`);
+    }
+  } else if (cond.model) {
+    notes.push(`mixture model: π=${fmt(cond.model.pi, 3)}, enriched mean=${fmt(cond.model.mu1, 2)}, `
+      + `control mean/sd=${fmt(cond.model.mu0, 2)}/${fmt(cond.model.sigma0, 2)} log2 `
+      + `(${fmt(cond.model.separation_sigma, 2)} σ apart)`);
+  }
+  if (notes.length) {
+    const banner = container.querySelector("#banner");
+    banner.className = "banner show";
+    banner.innerHTML = notes.map((n) => "• " + n).join("<br>");
+  }
+
+  container.querySelector("#fold").onchange = (e) => {
+    state.minFold = parseFloat(e.target.value); draw();
+  };
+  container.querySelector("#colorby").onchange = (e) => {
+    state.colorBy = e.target.value; draw();
+  };
+  container.querySelector("#labeltop").onchange = (e) => {
+    state.labelTop = parseInt(e.target.value, 10); draw();
+  };
+  container.querySelector("#label-by").onchange = (e) => {
+    state.labelBy = e.target.value; draw();
+  };
+  container.querySelector("#wheel-mode").onchange = (e) => {
+    state.wheelMode = e.target.value;
+    draw();                                   // re-renders with the new config
+  };
+  container.querySelector("#reset-zoom").onclick = () => {
+    const host = plotHost();
+    if (host) Plotly.relayout(host, { "xaxis.autorange": true, "yaxis.autorange": true });
+  };
+
+  // Manual marking. Names can be typed with autocomplete, or picked from the
+  // candidate table; both feed the same pending list, and one "Add mark" turns it
+  // into a colour group. Marked prey are drawn as filled dots in that colour and
+  // labelled with their own name in the same colour.
+  state.pending = [];
+
+  function nameIndex() {
+    if (state._nameIndex) return state._nameIndex;
+    const map = new Map();
+    for (const p of decodePoints(cond)) {
+      if (p.gn) map.set(p.gn.toUpperCase(), p);
+      if (p.acc) map.set(p.acc.toUpperCase(), p);
+    }
+    state._nameIndex = map;
+    return map;
+  }
+
+  function addPending(token) {
+    const key = String(token || "").trim().toUpperCase();
+    if (!key || state.pending.includes(key)) return false;
+    state.pending.push(key);
+    return true;
+  }
+
+  const input = container.querySelector("#mark-input");
+  const suggest = container.querySelector("#mark-suggest");
+
+  function renderPending() {
+    const host = container.querySelector("#mark-pending");
+    host.innerHTML = state.pending.map((n) =>
+      `<span class="pend-chip">${n}<button type="button" data-n="${n}" title="remove">×</button></span>`).join("");
+    host.querySelectorAll("button").forEach((b) => {
+      b.onclick = () => {
+        state.pending = state.pending.filter((x) => x !== b.dataset.n);
+        renderPending();
+      };
+    });
+  }
+
+  function showSuggestions(query) {
+    const q = query.trim().toUpperCase();
+    if (!q) { suggest.className = "suggest"; return; }
+    const idx = nameIndex();
+    const hits = [];
+    const seen = new Set();
+    for (const [key, p] of idx) {
+      if (key.startsWith(q) || (p.gn && p.gn.toUpperCase().startsWith(q))) {
+        const label = p.gn || p.acc;
+        if (seen.has(label)) continue;
+        seen.add(label);
+        hits.push({ token: p.gn || p.acc, acc: p.acc, fc: p.fc, gn: p.gn });
+      }
+      if (hits.length >= 40) break;
+    }
+    hits.sort((a, b) => (b.fc || 0) - (a.fc || 0));
+    const top = hits.slice(0, 8);
+    if (!top.length) {
+      suggest.className = "suggest show";
+      suggest.innerHTML = `<div style="color:#8a94a6">no match in this condition</div>`;
+      return;
+    }
+    suggest.className = "suggest show";
+    suggest.innerHTML = top.map((h) =>
+      `<div data-token="${h.token}"><b>${h.gn || h.acc}</b>` +
+      `<span class="acc">${h.acc} · ${fmt(h.fc, 1, "×")}</span></div>`).join("");
+    suggest.querySelectorAll("div[data-token]").forEach((el) => {
+      el.onclick = () => {
+        addPending(el.dataset.token);
+        input.value = "";
+        suggest.className = "suggest";
+        renderPending();
+      };
+    });
+  }
+
+  input.addEventListener("input", () => showSuggestions(input.value));
+  input.addEventListener("focus", () => showSuggestions(input.value));
+  input.addEventListener("blur", () => setTimeout(() => { suggest.className = "suggest"; }, 180));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const typed = input.value.trim();
+      if (typed) {
+        // accept the first suggestion, otherwise the typed token itself
+        const first = suggest.querySelector("div[data-token]");
+        addPending(first ? first.dataset.token : typed);
+        input.value = "";
+        suggest.className = "suggest";
+        renderPending();
+      }
+    } else if (event.key === "Escape") {
+      suggest.className = "suggest";
+    }
+  });
+
+  container.querySelector("#manual-add").onclick = () => {
+    if (!state.pending.length) { input.focus(); return; }
+    state.manual.push({
+      color: container.querySelector("#manual-color").value,
+      names: state.pending.slice(),
+    });
+    saveMarks();
+    state.pending = [];
+    renderPending();
+    renderChips();
+    draw();
+  };
+  container.querySelector("#mark-selected").onclick = () => {
+    if (!state.picked || !state.picked.size) return;
+    state.picked.forEach((n) => addPending(n));
+    state.picked.clear();
+    renderPending();
+    const note = container.querySelector("#sel-note");
+    if (note) note.textContent = "click rows to pick proteins";
+    container.querySelectorAll("#cand-table tr.picked").forEach((tr) => tr.classList.remove("picked"));
+    input.focus();
+  };
+  container.querySelector("#manual-clear").onclick = () => {
+    state.manual = [];
+    saveMarks();
+    state.pending = [];
+    renderPending();
+    renderChips();
+    draw();
+  };
+
+  function renderChips() {
+    const host = container.querySelector("#manual-chips");
+    if (!state.manual.length) { host.innerHTML = ""; return; }
+    const byName = new Map();
+    for (const p of decodePoints(cond)) {
+      if (p.gn) byName.set(p.gn.toUpperCase(), p);
+      if (p.acc) byName.set(p.acc.toUpperCase(), p);
+    }
+    host.innerHTML = state.manual.map((group, gi) => {
+      const found = group.names.filter((n) => byName.has(n.toUpperCase()));
+      const missing = group.names.filter((n) => !byName.has(n.toUpperCase()));
+      const label = found.join(", ") + (missing.length
+        ? (found.length ? " · " : "") + "<span class=\"miss\">not in this sheet: "
+          + missing.join(", ") + "</span>" : "");
+      // The swatch is an input, not a picture: recolouring an existing mark is
+      // common enough (grouping prey into pathways, changing your mind) that
+      // deleting and re-adding the mark just to change its colour is a nuisance.
+      return `<span class="mark-chip"><input type="color" class="swatch" value="${group.color}"`
+        + ` data-g="${gi}" title="change this mark's colour">`
+        + `${label}<button type="button" data-g="${gi}" title="remove">×</button></span>`;
+    }).join("");
+    host.querySelectorAll("input.swatch").forEach((inp) => {
+      // 'input' so the plot follows the picker live; 'change' catches browsers
+      // that only commit the value when the picker closes.
+      const recolor = () => {
+        state.manual[parseInt(inp.dataset.g, 10)].color = inp.value;
+        saveMarks();
+        draw();
+      };
+      inp.oninput = recolor;
+      inp.onchange = recolor;
+    });
+    host.querySelectorAll("button").forEach((b) => {
+      b.onclick = () => {
+        state.manual.splice(parseInt(b.dataset.g, 10), 1);
+        saveMarks();
+        renderChips();
+        draw();
+      };
+    });
+  }
+
+  // Recomputed for the selected gate: the payload's share is fixed at the
+  // default gate, so using it directly would mislabel the number when the user
+  // changes the threshold.
+  // The share of *measured* prey that clear the gate, which is what the card means:
+  // the gate's false-positive rate on this run. Prey the control never detected are
+  // censored, and every one of them clears the gate by construction, so counting them
+  // would overstate the noise — and disagree with the same number in the workbook,
+  // which is computed without them.
+  function currentShare() {
+    const measured = decodePoints(cond)
+      .filter((p) => p.fc !== null && p.fc !== undefined && !p.lb);
+    if (!measured.length) return null;
+    return measured.filter((p) => p.fc >= state.minFold).length / measured.length;
+  }
+
+  // A log-log scatter is read along its diagonal, so give the plot area a
+  // near-square shape instead of a wide letterbox. Re-applied on resize.
+  function sizePlot() {
+    const host = plotHost();
+    if (!host) return;
+    const width = host.clientWidth || 1200;
+    host.style.height = Math.round(Math.min(Math.max(width * 0.86, 620), 1250)) + "px";
+  }
+  if (!state.resizeWired) {
+    state.resizeWired = true;
+    let timer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        sizePlot();
+        const host = plotHost();
+        if (host && host.data) Plotly.Plots.resize(host);
+      }, 220);
+    });
+  }
+  sizePlot();
+
+  function draw() {
+    const counts = countsFor(cond, state.minFold, minUp);
+    const quantified = decodePoints(cond).filter((p) => p.bait).length;
+    container.querySelector("#kpis").innerHTML = `
+      <div class="card"><div class="lbl">Prey quantified</div><div class="kpi">${quantified}</div></div>
+      <div class="card" style="--accent:var(--pass)" title="Proteins passing every gate: normalized FC ≥ ${state.minFold}×, ≥ ${minUp} unique peptides, not a CRAPome contaminant, not the bait. The EV-undetected class counts here too: a lower bound that clears the gate means the real ratio does as well.">
+        <div class="lbl">Candidates</div>
+        <div class="kpi" style="color:var(--pass)">${passing(counts).length}</div>
+        <div class="legend-note">pass every gate${counts.lower_bound.length
+          ? `, incl. ${counts.lower_bound.length} EV-undetected` : ""}</div></div>
+      <div class="card" style="--accent:${DATA.colors.lower_bound}" title="The control channel never detected these prey, so each was given the 5th-percentile control floor of this workbook. Their fold change is a lower bound ('Control_missing'), never a measurement, and they take no part in the background spread or in any p/q value.">
+        <div class="lbl">EV not detected</div>
+        <div class="kpi" style="color:${DATA.colors.lower_bound}">${counts.lower_bound.length}</div>
+        <div class="legend-note">FC is a lower bound</div></div>
+      <div class="card" style="--accent:${DATA.colors.crapome}"><div class="lbl">CRAPome contaminants</div>
+        <div class="kpi" style="color:${DATA.colors.crapome}">${counts.crapome.length}</div></div>
+      <div class="card"><div class="lbl">Below ${state.minFold}×</div>
+        <div class="kpi" style="color:#5d6b7a">${counts.below_fold.length}</div></div>
+      <div class="card"><div class="lbl">&lt; ${minUp} unique peptides</div>
+        <div class="kpi" style="color:#7a7a7a">${counts.few_peptides.length}</div></div>
+      <div class="card" style="--accent:#7a92af" title="Offset removed before the gates were applied. The ${cond.diagnostics.mode} estimator reads the typical prey at ${fmt(2 ** cond.diagnostics.correction_log2, 2, "×")}, so every raw fold change was scaled by ${fmt(2 ** -cond.diagnostics.correction_log2, 2)}. See Methods for the other estimators.">
+        <div class="lbl">Load correction</div>
+        <div class="kpi small hw">${fmt(cond.diagnostics.correction_log2, 2)} log2</div>
+        <div class="legend-note">removed; ×${fmt(2 ** -cond.diagnostics.correction_log2, 2)} applied</div></div>
+      ${noise && noise.sigma0 ? `
+      <div class="card" style="--accent:#8a94a6" title="Robust spread of the no-change background, from the negative half of the normalized ratio distribution.">
+        <div class="lbl">Ratio noise σ</div>
+        <div class="kpi small hw">${fmt(noise.sigma0, 2)} log2</div>
+        <div class="legend-note">no-change spread</div></div>
+      <div class="card" title="Fraction of measured prey (both channels detected) clearing the gate you selected. Prey the control never detected are excluded: every one of them clears any gate by construction, so counting them would overstate this number. On a noisy single run it is the gate's false-positive rate, not a discovery rate.">
+        <div class="lbl">Share above gate</div>
+        <div class="kpi small hw">${pct(currentShare())}</div>
+        <div class="legend-note">of measured prey clear ≥ ${state.minFold}×
+          (EV-undetected prey excluded: a censored ratio is not a measured ratio)</div></div>
+      <div class="card" style="--accent:#b26a00" title="Smallest normalized fold change among the prey that actually reach q ≤ 0.05 in this condition. Uses the empirical null only, not the mixture fit.">
+        <div class="lbl">Min FC at q = 0.05</div>
+        <div class="kpi small hw">${noise.min_fc_significant ? fmt(noise.min_fc_significant, 0) + "×" : "—"}</div>
+        <div class="legend-note">${noise.min_fc_significant
+          ? `${noise.n_significant} prey reach q ≤ 0.05`
+          : `none reach q ≤ 0.05 (${fmt(noise.fold_at_q05, 0)}× would be needed at the top of the ranking)`}</div></div>` : ""}`;
+
+    const lo = axisMin(cond), hi = axisMax(cond);
+    // Every guide line is drawn in the load-corrected frame, i.e. at the raw ratio
+    // the gate was actually applied to. A normalized fold change k sits on the raw
+    // ratio k * 2^correction, so an uncorrected line would bound a region the gates
+    // never used (in the worst condition here, 90% of the passing prey sit below it).
+    const corrFold = 2 ** cond.diagnostics.correction_log2;
+    const traces = [];
+    // 批次 QC 判定的「疑似背景」用点的颜色表示（不是外面加一圈），单独成一条 trace，
+    // 因此可以在图例里点击把它整组隐藏，去看剩下的点。它们从各自的状态分组里移出，
+    // 否则同一批点会被画两次、点击也隐藏不干净。
+    const bgSet = new Set(decodePoints(cond).filter((p) => p.bait && p.qc_bg_flag));
+    if (state.colorBy === "status") {
+      for (const key of ["below_fold", "crapome", "few_peptides", "lower_bound", "pass", "bait_self"]) {
+        const subset = counts[key].filter((p) => !bgSet.has(p));
+        if (!subset.length) continue;
+        traces.push(markerTrace(subset, key, DATA.colors[key], key === "pass" ? 0.72 : 0.32));
+      }
+      if (bgSet.size) {
+        traces.push(markerTrace([...bgSet], "qc_bg", DATA.colors.qc_bg, 0.85));
+      }
+    } else {
+      const visible = decodePoints(cond).filter((p) => p.bait);
+      traces.push(markerTrace(visible, "proteins", null, 0.68, true));
+    }
+
+    const ranked = rankedCandidates();
+    // The window at full zoom, in log10 units, matching the axis ranges below.
+    const viewLow = Math.log10(lo * 0.6), viewHigh = Math.log10(hi * 2.2);
+    const grid = dotGrid(decodePoints(cond), [viewLow, viewHigh], [viewLow, viewHigh]);
+    // The in-plot guide labels are placed first: they are part of the figure's furniture
+    // (the gate tag and the null lines), and a candidate name drawn across the gate tag
+    // is unreadable either way round. Their boxes are then handed to the name planner.
+    // planGuideLabels works in the axes' own units (linear abundances), like the trace
+    // it feeds; planCallouts works in log10. Passing the log10 window here put every
+    // guide label orders of magnitude off the plot and dropped them all, silently.
+    const guideFolds = [1, 2, state.minFold]
+      .concat(noise.sigma0 ? [2 ** (2 * noise.sigma0), 2 ** (3 * noise.sigma0)] : [])
+      .map((f) => Math.log10(f * 2 ** cond.diagnostics.correction_log2));
+    const guidePlan = planGuideLabels(state.minFold, lo, hi);
+    state.guideBoxes = guidePlan.boxes;
+    state.guideFolds = guideFolds;
+    // The bait's name is next: it is the anchor a reader looks for, so it wins space
+    // over the automatic candidate names.
+    const baitPlan = planBait([viewLow, viewHigh], [viewLow, viewHigh], grid, guidePlan.boxes);
+    // Marks follow: the reader picked those by hand, so they also outrank the
+    // automatic names.
+    const markPlan = planMarks([viewLow, viewHigh], [viewLow, viewHigh], grid,
+      guidePlan.boxes.concat(baitPlan.boxes));
+    const placed = labelBudget() === 0
+      ? [] : planCallouts(ranked, [viewLow, viewHigh], [viewLow, viewHigh],
+        labelBudget(), markPlan.boxes.concat(guidePlan.boxes).concat(baitPlan.boxes),
+        labelFontSize(labelBudget()), grid, guideFolds);
+    updateLabelNote(placed.length, ranked);
+    if (placed.length) {
+      traces.push({
+        type: "scatter", mode: "markers", name: "labelled candidates",
+        x: placed.map((q) => xOf(q.p)), y: placed.map((q) => q.p.bait),
+        marker: { size: 12, color: "rgba(255,255,255,0)",
+                  line: { color: DATA.colors.pass, width: 1.8 } },
+        customdata: placed.map((q) => hoverFields(q.p, state.minFold, minUp)),
+        hovertemplate: HOVER_TEMPLATE,
+      });
+    }
+    calloutTracesFromPlan(placed, undefined, "candidate labels", "candidate leaders",
+      labelFontSize(labelBudget())).forEach((t) => traces.push(t));
+    guideLabelTraces(state.minFold, lo, hi, guidePlan).forEach((t) => traces.push(t));
+    baitPlan.plans.forEach(({ plan }) =>
+      calloutTracesFromPlan(plan, DATA.colors.bait, "bait label", "bait leader", 11)
+        .forEach((t) => traces.push(t)));
+    const hostLayout = plotHost()._fullLayout;
+    const hostSize = (hostLayout && hostLayout.xaxis && hostLayout.xaxis._length
+      ? Math.round(hostLayout.xaxis._length) : 0)
+      + "x" + (hostLayout && hostLayout.yaxis && hostLayout.yaxis._length
+        ? Math.round(hostLayout.yaxis._length) : 0);
+    state.rangeKey = [viewLow, viewHigh, viewLow, viewHigh].map((v) => v.toFixed(4)).join(",")
+      + "|" + hostSize;
+
+    // Shade the enrichment region: two invisible lines with the band filled
+    // between them (plotly fills a shape only through the tonexty trace fill).
+    // Both edges are in the corrected frame, so the shaded region is exactly the
+    // set of prey whose normalized fold change clears the gate.
+    const bandLo = { type: "scatter", mode: "lines", x: [lo, hi],
+                     y: [lo * corrFold, hi * corrFold],
+                     line: { width: 0 }, hoverinfo: "skip", showlegend: false, fill: "tonexty",
+                     fillcolor: "rgba(27,127,59,.07)", name: "enrichment gate band" };
+    const bandHi = { type: "scatter", mode: "lines", x: [lo, hi],
+                     y: [hi * corrFold * state.minFold * 12, hi * corrFold * state.minFold * 12],
+                     line: { width: 0 }, hoverinfo: "skip", showlegend: false, name: "band top" };
+    // Legend entries for the guide lines: shapes are not legend items, and an
+    // in-plot label can end up behind the point cloud.
+    const legendLine = (name, color, dash, width) => ({
+      type: "scatter", mode: "lines", x: [null, null], y: [null, null], name,
+      line: { color, dash, width }, hoverinfo: "skip", showlegend: true,
+    });
+    const lineLegend = [
+      legendLine("typical prey (1×, load-corrected)", "#9aa7b4", "dot", 1),
+      legendLine(`${state.minFold}× gate`, "#1b7f3b", "dash", 2),
+      legendLine("2× line", "#0f5c2a", "dash", 1.4),
+      legendLine("1:1 raw (no correction)", "#dfe6ee", "dot", 1),
+    ];
+    if (noise.sigma0) {
+      lineLegend.push(legendLine("2σ / 3σ null", "#8a94a6", "dot", 1.4));
+    }
+    const ordered = [bandLo, bandHi].concat(
+      marginalTraces(cond, lo, hi), traces, manualTraces(markPlan), lineLegend);
+
+    try {
+      Plotly.react(plotHost(), ordered, layoutFor(cond, state.minFold, lo, hi),
+        // scrollZoom stays off: the wheel is for scrolling the page, and an
+        // accidental zoom while reading is a constant annoyance. Drag to zoom
+        // still works, and "Reset zoom" undoes it.
+        { displaylogo: false, responsive: true, scrollZoom: state.wheelMode === "zoom",
+          modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d", "toImage"],
+          modeBarButtonsToAdd: [pdfButton()] })
+        .then(() => {
+          wireZoomRelabel();
+          // re-plan once with the real geometry (state.rangeKey is reset so the
+          // guard in the relabel does not skip it)
+          state.rangeKey = null;
+          relabelLabels();
+        });
+      renderTable(counts);
+    } catch (err) {
+      plotHost().innerHTML =
+        '<div style="padding:24px;color:#b26a00;font:14px -apple-system,sans-serif">'
+        + '<b>This panel failed to render.</b><br>' + String(err)
+        + '<br>The numbers are still in the Excel summary and the JSON payload.</div>';
+      throw err;
+    }
+  }
+
+  // Marginal abundance distributions. Binned in log10 units so the bars line up
+  // with the log-scaled scatter axes, and drawn on separate linear axes.
+  function marginalTraces(cond, lo, hi) {
+    const pts = decodePoints(cond).filter((p) => p.ctrl > 0 && p.bait > 0 && !p.lb);
+    if (pts.length < 20) return [];
+    const bin = (values) => {
+      const sorted = values.slice().sort((a, b) => a - b);
+      const low = Math.log10(lo * 0.6), high = Math.log10(hi * 2.2);
+      const n = 34, w = (high - low) / n;
+      const counts = new Array(n).fill(0), centers = new Array(n).fill(0);
+      for (let i = 0; i < n; i++) centers[i] = low + w * (i + 0.5);
+      for (const v of sorted) {
+        let k = Math.floor((v - low) / w);
+        if (k < 0) k = 0;
+        if (k >= n) k = n - 1;
+        counts[k]++;
+      }
+      return { centers, counts, w };
+    };
+    const bx = bin(pts.map((p) => Math.log10(p.ctrl)));
+    const by = bin(pts.map((p) => Math.log10(p.bait)));
+    const style = { color: "rgba(122,146,175,.32)", line: { width: 0 } };
+    return [
+      { type: "bar", x: bx.centers, y: bx.counts, xaxis: "x2", yaxis: "y2",
+        width: bx.w * 0.9, marker: style, hoverinfo: "skip", showlegend: false },
+      { type: "bar", x: by.counts, y: by.centers, xaxis: "x3", yaxis: "y3",
+        orientation: "h", width: by.w * 0.9, marker: style, hoverinfo: "skip", showlegend: false },
+    ];
+  }
+
+  // Candidate names are drawn as layout annotations, not traces, so they can be
+  // recomputed on zoom without touching the axes or the data. Placement works on
+  // the *visible* window: the separation required is a fraction of what is on
+  // screen, so zooming into a dense corner makes more names fit. A fixed
+  // separation measured against the whole plot would either overprint (asking for
+  // 100 names in one corner) or hide most of them.
+
+  // Candidate names are drawn as text traces, not layout annotations: in this
+  // figure data-referenced annotations render as empty groups (a minimal
+  // {x, y, xref:"x"} annotation produces no text node, while a paper-referenced
+  // one does), whereas traces render reliably — the same reason the status
+  // markers and rings work. Alternating above/below doubles the room per label,
+  // and the set is restyled on zoom so more names fit as the window shrinks.
+  // One callout builder for both candidate names and marked names: a name, a
+  // thin diagonal leader pointing at its dot, and a clear gap before the text so
+  // the line never touches the glyphs. The four diagonal directions rotate, so a
+  // cluster of labels fans out instead of stacking into one vertical hedge.
+  // ---------------------------------------------------------------- name placement
+  // A name is drawn on one of four diagonals from its dot, with a leader line across
+  // the gap. Which diagonal is decided by measurement rather than by rotation: the
+  // box that lands on the fewest other dots wins, and a box that would collide with a
+  // name already placed, or run off the plot, is not used at all. Rotating blindly
+  // put names through the densest part of the cloud and on top of each other wherever
+  // candidates cluster (a shared EV floor stacks prey into one column, which is
+  // exactly where the old rule piled names up).
+  const CALLOUT_DIRS = [[1, 0.6], [-1, 0.6], [1, -0.6], [-1, -0.6]];
+
+  function pxPerLog(xr, yr) {
+    // The axes' own pixel length is exact, and it matters: a text box measured
+    // against a guessed width comes out too small, and names that "fit" in the plan
+    // are drawn on top of each other. The host size is only the fallback for the
+    // very first draw, before plotly has laid the figure out.
+    const el = plotHost();
+    const fl = el && el._fullLayout;
+    if (fl && fl.xaxis && fl.yaxis && fl.xaxis._length && fl.yaxis._length) {
+      const xr0 = fl.xaxis.range || xr, yr0 = fl.yaxis.range || yr;
+      return { x: fl.xaxis._length / Math.max(xr0[1] - xr0[0], 1e-9),
+               y: fl.yaxis._length / Math.max(yr0[1] - yr0[0], 1e-9) };
+    }
+    const w = (el && el.clientWidth) || 760;
+    const h = (el && el.clientHeight) || 620;
+    return { x: (w * 0.78) / Math.max(xr[1] - xr[0], 1e-9),
+             y: (h * 0.72) / Math.max(yr[1] - yr[0], 1e-9) };
+  }
+
+  // How much ink sits under a rectangle, via one pass over the prey into a grid. The
+  // weight is what a name has to be readable against: a 3-4 px status dot is a
+  // nuisance, while the large markers (the EV-floor triangles, the bait diamond, the
+  // hand-marked prey) are opaque and cover a glyph, so they count for far more.
+  function dotGrid(points, xr, yr, n = 56) {
+    const gx = (xr[1] - xr[0]) / n, gy = (yr[1] - yr[0]) / n;
+    const cells = new Float32Array(n * n);
+    for (const p of points) {
+      const x = Math.log10(xOf(p)), y = Math.log10(p.bait);
+      const ix = Math.floor((x - xr[0]) / gx), iy = Math.floor((y - yr[0]) / gy);
+      const heavy = p.lb || p.bait_hit || (typeof isMarked === "function" && isMarked(p));
+      if (ix >= 0 && ix < n && iy >= 0 && iy < n) cells[iy * n + ix] += heavy ? 20 : 1;
+    }
+    return {
+      sum(x0, y0, x1, y1) {
+        const i0 = Math.max(0, Math.floor((x0 - xr[0]) / gx));
+        const i1 = Math.min(n - 1, Math.floor((x1 - xr[0]) / gx));
+        const j0 = Math.max(0, Math.floor((y0 - yr[0]) / gy));
+        const j1 = Math.min(n - 1, Math.floor((y1 - yr[0]) / gy));
+        let total = 0;
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) total += cells[j * n + i];
+        return total;
+      },
+    };
+  }
+
+  function overlapped(a, b, padX, padY) {
+    return a.x0 < b.x1 + padX && a.x1 + padX > b.x0
+        && a.y0 < b.y1 + padY && a.y1 + padY > b.y0;
+  }
+
+  // Places up to `want` names for `points` inside the window [xr, yr]. `taken` holds
+  // boxes already spoken for (mark names are placed first and win), and each item is
+  // reported with its box so a caller can pass them on.
+  function planCallouts(points, xr, yr, want, taken, fontSize, grid, folds) {
+    if (!want || !points.length) return [];
+    const ppl = pxPerLog(xr, yr);
+    const grid_ = grid || dotGrid(decodePoints(cond), xr, yr);
+    // The guide lines are the other thing that makes a name unreadable, and they are
+    // plotly *shapes*: they are invisible to the dot grid. A box a line passes through
+    // is rejected outright (the cost of one crossing dwarfs any number of dots), so a
+    // name bisected by the 2x line ends up somewhere else or is not drawn.
+    const lines = folds || [];
+    const size = fontSize || 10.5;
+    // 0.68em is deliberately generous: gene symbols are uppercase-heavy, and
+    // overestimating a box costs a skipped name while underestimating it costs an
+    // unreadable overlap.
+    const charPx = size * 0.68, padX = 6 / ppl.x, padY = 4 / ppl.y, gapX = 8 / ppl.x;
+    const busy = (taken || []).slice();
+    const placed = [];
+    for (const p of points) {
+      if (placed.length >= want) break;
+      const x = Math.log10(xOf(p)), y = Math.log10(p.bait);
+      if (!(x >= xr[0] && x <= xr[1] && y >= yr[0] && y <= yr[1])) continue;
+      const label = String(p.gn || p.acc || "");
+      const w = (charPx * label.length + 6) / ppl.x, h = (size + 5) / ppl.y;
+      let best = null;
+      // Each direction is tried at three distances: a label in a dense column can only
+      // become readable by standing off from it, with a longer leader to keep it
+      // attached to its dot.
+      for (const reach of [1, 1.9, 3, 4.5]) {
+      for (const [sx, sy] of CALLOUT_DIRS) {
+        const anchorX = x + sx * (gapX * reach);
+        const anchorY = y + sy * (h / 2 + 4 / ppl.y) * reach;
+        const box = sx > 0
+          ? { x0: anchorX, x1: anchorX + w, y0: anchorY - h / 2, y1: anchorY + h / 2, side: "middle right" }
+          : { x0: anchorX - w, x1: anchorX, y0: anchorY - h / 2, y1: anchorY + h / 2, side: "middle left" };
+        if (box.x0 < xr[0] || box.x1 > xr[1] || box.y0 < yr[0] || box.y1 > yr[1]) continue;
+        if (busy.some((b) => overlapped(box, b, padX, padY))) continue;
+        // In log10 space a guide line at y = x*fold is the offset log10(fold); it crosses
+        // the box when that offset shifts the x range into the box's y range.
+        let crossings = 0;
+        for (const lg of lines) {
+          if (Math.max(box.x0 + lg, box.y0) <= Math.min(box.x1 + lg, box.y1)) crossings++;
+        }
+        const cost = grid_.sum(box.x0, box.y0, box.x1, box.y1) + 200 * crossings;
+        if (!best || cost < best.cost) best = { cost, box, anchorX, anchorY, reach };
+        // A name with nothing under it is worth taking straight away.
+        if (cost === 0) break;
+      }
+      if (best && best.cost === 0) break;
+      }
+      // A name drawn across dozens of dots is not read anyway; the panel note reports
+      // how many of the candidates are labelled, so dropping one is honest.
+      if (!best || best.cost > 14) continue;
+      busy.push(best.box);
+      placed.push({ p, box: best.box, x: best.anchorX, y: best.anchorY, side: best.box.side });
+    }
+    return placed;
+  }
+
+  // One text trace per side (so plotly can align the text against its anchor), plus
+  // the leader segments that attach each name to its dot.
+  function calloutTracesFromPlan(plan, color, textName, leaderName, fontSize) {
+    if (!plan.length) return [];
+    // 'position' is plotly's own name for it: the text is drawn on the side it names.
+    const left = plan.filter((t) => t.side === "middle left");
+    const right = plan.filter((t) => t.side === "middle right");
+    const mk = (side, position) => side.length ? {
+      type: "scatter", mode: "text", name: textName, showlegend: false,
+      x: side.map((t) => 10 ** t.x), y: side.map((t) => 10 ** t.y),
+      text: side.map((t) => t.p.gn),
+      textposition: position,           // text sits beside the anchor, off the line
+      textfont: { size: fontSize || 10.5, color: color || "#0f5132" },
+      customdata: side.map((t) => hoverFields(t.p, state.minFold, minUp)),
+      hovertemplate: HOVER_TEMPLATE,
+    } : null;
+    const segs = [];
+    plan.forEach((t) => {
+      if (segs.length) segs.push(null);
+      // from just off the dot to the near edge of the text, so a name that stood off
+      // from a dense column is still attached to its own dot by its leader
+      const x0 = Math.log10(xOf(t.p)), y0 = Math.log10(t.p.bait);
+      const dx = t.x - x0, dy = t.y - y0;
+      segs.push({ x: 10 ** (x0 + dx * 0.22), y: 10 ** (y0 + dy * 0.22) },
+                { x: 10 ** (x0 + dx * 0.96), y: 10 ** (y0 + dy * 0.96) });
+    });
+    const leader = {
+      type: "scatter", mode: "lines", name: leaderName, showlegend: false,
+      x: segs.map((q) => (q ? q.x : null)), y: segs.map((q) => (q ? q.y : null)),
+      line: { color: color || "#0f5132", width: 1 },
+      opacity: color ? 0.85 : 0.55, hoverinfo: "skip",
+    };
+    return [mk(right, "middle right"), mk(left, "middle left"), leader].filter(Boolean);
+  }
+
+  // Marked proteins keep their name once: they are removed from the candidate
+  // labelling, so a marked prey that also ranks in the top N does not carry two
+  // names — its existing name simply appears in the mark colour.
+  function markedKeys() {
+    const keys = new Set();
+    for (const group of state.manual) {
+      for (const n of group.names) { keys.add(String(n).toUpperCase()); }
+    }
+    return keys;
+  }
+
+  function isMarked(point) {
+    const keys = markedKeys();
+    return (point.gn && keys.has(point.gn.toUpperCase()))
+      || (point.acc && keys.has(point.acc.toUpperCase()));
+  }
+
+  function rankedCandidates() {
+    // Marked prey are excluded here: their names come from the mark callouts, in
+    // the mark colour, once — not duplicated in green.
+    return passing(countsFor(cond, state.minFold, minUp))
+      .slice().sort((a, b) => rankKey(b, state.labelBy) - rankKey(a, state.labelBy))
+      .filter((p) => !isMarked(p));
+  }
+
+  // Name the order in words, so a reader can tell what the top names mean without
+  // reading the code. The 'auto' wording follows the same rule rankKey applies.
+  function labelCriterionText() {
+    const mode = state.labelBy || "auto";
+    if (mode !== "auto") return LABEL_CRITERION[mode];
+    const fitted = decodePoints(cond).some((p) => p.score !== null && p.score !== undefined);
+    return "evidence tier: EV-undetected prey first, then "
+      + (fitted ? "the SAINT-style score" : "the calibrated q value (no score was fitted)");
+  }
+
+  // Are the top names actually distinguishable? When the ranking key is one big
+  // tie — a condition with no signal, where every q lands on the same value — the
+  // chosen names are arbitrary, and saying so beats presenting them as the top
+  // candidates.
+  function labelTieWarning(ranked, want) {
+    const mode = state.labelBy || "auto";
+    if (mode === "fold" || mode === "abundance" || want < 4) return "";
+    const top = ranked.slice(0, want);
+    if (top.length < want) return "";
+    const distinct = new Set(top.map((p) => `${p.lb ? 1 : 0}:${rankKey(p, mode).toFixed(6)}`)).size;
+    if (distinct > Math.max(2, want / 2)) return "";
+    return ` — the top ${want} share only ${distinct} distinct ${mode === "score" ? "scores" : "values"}, `
+      + "so this order is mostly a tie and those names are arbitrary";
+  }
+
+  function labelFontSize(count) {
+    return count > 40 ? 8.5 : (count > 20 ? 9.5 : 10.5);
+  }
+
+  function visibleRanges() {
+    const gd = plotHost();
+    if (!gd || !gd._fullLayout || !gd._fullLayout.xaxis) return null;
+    return { xr: gd._fullLayout.xaxis.range.slice(), yr: gd._fullLayout.yaxis.range.slice() };
+  }
+
+  // Relabel when the user zooms. The guard is the range itself: a relayout of the
+  // labels does not change the ranges, so it cannot loop.
+  function wireZoomRelabel() {
+    const gd = plotHost();
+    if (!gd || typeof gd.on !== "function" || gd.__zoomWired) return;
+    gd.__zoomWired = true;
+    // plotly_afterplot, not plotly_relayout: the print preparation resizes the figure
+    // without an axis-keyed relayout, and a plan made for the screen geometry puts
+    // names on top of each other once the figure is the size of a page. The guard
+    // inside relabelLabels is the range *and* the pixel size, so a restyle that
+    // changes neither stops there instead of looping.
+    gd.on("plotly_afterplot", relabelLabels);
+  }
+
+  // Place the names for the window that is on screen right now, and restyle the ring
+  // and the label traces in place. Called on zoom, on resize (the print layout
+  // resizes the figure at the same ranges), and once after the first render: the
+  // first plan runs before plotly has laid the figure out, so its text boxes would
+  // otherwise be estimates, and names planned against estimates land on each other.
+  function relabelLabels() {
+    {
+      const gd = plotHost();
+      const ranges = visibleRanges();
+      if (!gd || !ranges) return;
+      const fl = gd._fullLayout;
+      const size = (fl && fl.xaxis && fl.xaxis._length ? Math.round(fl.xaxis._length) : 0)
+        + "x" + (fl && fl.yaxis && fl.yaxis._length ? Math.round(fl.yaxis._length) : 0);
+      const key = ranges.xr.concat(ranges.yr).map((v) => v.toFixed(4)).join(",") + "|" + size;
+      if (key === state.rangeKey) return;
+      state.rangeKey = key;
+      const ranked = rankedCandidates();
+      const grid = dotGrid(decodePoints(cond), ranges.xr, ranges.yr);
+      const guideBoxes = state.guideBoxes || [];
+      const markPlan = planMarks(ranges.xr, ranges.yr, grid, guideBoxes);
+      const placed = labelBudget() === 0
+        ? [] : planCallouts(ranked, ranges.xr, ranges.yr, labelBudget(),
+          markPlan.boxes.concat(guideBoxes), labelFontSize(labelBudget()), grid,
+          state.guideFolds || []);
+      // Restyle the ring and the label traces; nothing else changes, so the zoom
+      // itself is preserved.
+      const ringIdx = [];
+      const textIdx = [];
+      gd.data.forEach((t, i) => {
+        if (t.name === "labelled candidates") ringIdx.push(i);
+        if (t.name === "candidate labels") textIdx.push(i);
+      });
+      if (ringIdx.length) {
+        Plotly.restyle(gd, {
+          x: [placed.map((q) => xOf(q.p))],
+          y: [placed.map((q) => q.p.bait)],
+          customdata: [placed.map((q) => hoverFields(q.p, state.minFold, minUp))],
+        }, ringIdx);
+      }
+      const fresh = calloutTracesFromPlan(placed, undefined, "candidate labels",
+        "candidate leaders", labelFontSize(labelBudget()));
+      const freshText = fresh.filter((t) => t.mode === "text");
+      const freshLead = fresh.find((t) => t.name === "candidate leaders");
+      if (freshText.length && textIdx.length === freshText.length) {
+        Plotly.restyle(gd, {
+          x: freshText.map((t) => t.x), y: freshText.map((t) => t.y), text: freshText.map((t) => t.text),
+          textfont: freshText.map((t) => t.textfont),
+          customdata: freshText.map((t) => t.customdata),
+        }, textIdx);
+        const leadIdx = [];
+        gd.data.forEach((t, i) => { if (t.name === "candidate leaders") leadIdx.push(i); });
+        if (leadIdx.length === 1 && freshLead) {
+          Plotly.restyle(gd, { x: [freshLead.x], y: [freshLead.y] }, leadIdx);
+        }
+      } else if (freshText.length) {
+        // the number of text traces changed (one side emptied), so a plain react
+        // is the safe path — it keeps the axis ranges we just set
+        const layout = Object.assign({}, gd.layout);
+        const data = gd.data.slice();
+        let k = 0;
+        for (let i = 0; i < data.length; i++) {
+          if (data[i].name === "candidate labels" && k < freshText.length) {
+            data[i] = Object.assign({}, data[i], freshText[k++]);
+          }
+        }
+        const leadIdx = data.findIndex((t) => t.name === "candidate leaders");
+        if (leadIdx >= 0 && freshLead) data[leadIdx] = freshLead;
+        Plotly.react(gd, data, layout);
+      } else {
+        // Nothing is placeable in this window (a zoom into an empty corner). Leaving
+        // the previous names on screen would label prey that are no longer visible.
+        const idx = textIdx.concat(ringIdx);
+        if (idx.length) {
+          Plotly.restyle(gd, { x: idx.map(() => []), y: idx.map(() => []),
+                               text: idx.map(() => []) }, idx);
+        }
+      }
+      updateLabelNote(placed.length, ranked);
+    }
+  }
+
+  function updateLabelNote(placedCount, ranked) {
+    const note = container.querySelector("#label-note");
+    if (!note) return;
+    if (labelBudget() === 0) { note.textContent = "no labels"; return; }
+    const want = labelBudget();
+    note.textContent = `labeled by ${labelCriterionText()}`
+      + ` — ${placedCount} of ${ranked.length} candidate${ranked.length === 1 ? "" : "s"} placed at this zoom`
+      + (placedCount < ranked.length
+        ? "; zoom in and more appear, up to " + want : "")
+      + labelTieWarning(ranked, Math.min(placedCount || want, want));
+  }
+
+  // One trace per manual group: large filled markers so a marked protein stands out
+  // over whatever status colour it already carries. Matching is gate-independent,
+  // so a contaminant or a below-cutoff protein can be followed too.
+  function markedGroups() {
+    if (!state.manual.length) return [];
+    const all = decodePoints(cond).filter((p) => xOf(p) > 0 && p.bait > 0);
+    return state.manual.map((group) => {
+      const wanted = group.names.map((n) => n.toUpperCase());
+      const hits = all.filter((p) =>
+        (p.gn && wanted.includes(p.gn.toUpperCase()))
+        || (p.acc && wanted.includes(p.acc.toUpperCase())));
+      // A gene can occupy several rows in the workbook (isoforms, accessions), and
+      // marking it drew one dot and one label per row — which reads as a duplicated
+      // label. One row per gene is kept, the most abundant one.
+      const best = new Map();
+      for (const p of hits) {
+        const key = (p.gn || p.acc || "").toUpperCase();
+        const seen = best.get(key);
+        if (!seen || (p.bait || 0) > (seen.bait || 0)) best.set(key, p);
+      }
+      return { group, matched: Array.from(best.values()) };
+    }).filter((g) => g.matched.length);
+  }
+
+  // Marked names are placed first and their boxes are handed on, so the automatic
+  // candidate names never land on a name the reader asked for.
+  // The baited protein is excluded from the candidates, so nothing would ever label
+  // it — yet it is the one dot a reader looks for first. Its name is planned like a
+  // mark (own colour, leader line), placed ahead of the candidate names, and its box
+  // is handed on so no candidate name lands on it. One label per gene, the most
+  // abundant row, matching how marks dedupe.
+  function baitPoints() {
+    const best = new Map();
+    for (const p of decodePoints(cond)) {
+      if (!p.bait_hit) continue;
+      const key = (p.gn || p.acc || "").toUpperCase();
+      const seen = best.get(key);
+      if (!seen || (p.bait || 0) > (seen.bait || 0)) best.set(key, p);
+    }
+    return Array.from(best.values());
+  }
+
+  function planBait(xr, yr, grid, taken) {
+    const boxes = [];
+    const plans = baitPoints().map((p) => {
+      const plan = planCallouts([p], xr, yr, 1,
+        boxes.concat(taken || []), 11, grid);
+      plan.forEach((t) => boxes.push(t.box));
+      return { name: p.gn, plan };
+    }).filter((t) => t.plan.length);
+    return { boxes, plans };
+  }
+
+  function planMarks(xr, yr, grid, taken) {
+    const boxes = [];
+    const plans = markedGroups().map(({ group, matched }) => {
+      const plan = planCallouts(matched, xr, yr, matched.length,
+        boxes.concat(taken || []), 11, grid);
+      plan.forEach((t) => boxes.push(t.box));
+      return { group, plan, matched };
+    });
+    return { boxes, plans };
+  }
+
+  function manualTraces(markPlan) {
+    if (!markPlan || !markPlan.plans.length) return [];
+    const dotTraces = markPlan.plans.map(({ group, plan }) => ({
+      type: "scatter", mode: "markers",
+      name: `marked (${plan.length})` + (group.names.length <= 3
+        ? ": " + group.names.join(", ") : ""),
+      x: plan.map((t) => xOf(t.p)), y: plan.map((t) => t.p.bait),
+      // A filled dot in the chosen colour, not an outline: the point itself is
+      // recoloured so it reads as "this one is mine" at a glance.
+      marker: {
+        size: 13, symbol: "circle", color: group.color, opacity: 0.95,
+        line: { color: "#ffffff", width: 1.2 },
+      },
+      customdata: plan.map((t) => hoverFields(t.p, state.minFold, minUp)),
+      hovertemplate: HOVER_TEMPLATE,
+    }));
+    const labelled = markPlan.plans.flatMap(({ group, plan }) =>
+      calloutTracesFromPlan(plan, group.color, "mark labels", "mark leaders", 11));
+    return dotTraces.concat(labelled);
+  }
+
+  function markerTrace(subset, name, color, opacity, colorbar = false) {
+    // Small, semi-transparent dots: a BioID scatter packs a few thousand prey
+    // into one diagonal band, and large opaque markers merge into a solid mass.
+    const marker = {
+      size: subset.map((p) => Math.min(3.4 + 1.5 * Math.sqrt(Math.max(p.up || 1, 1)), 11)),
+      opacity,
+    };
+    if (colorbar) {
+      const vals = subset.map((p) => state.colorBy === "score" ? p.score : p.cfreq);
+      marker.color = vals;
+      marker.colorscale = state.colorBy === "score" ? "BluGn" : "OrRd";
+      marker.cmin = 0;
+      marker.cmax = state.colorBy === "score" ? 1 : 1;
+      marker.showscale = true;
+      marker.colorbar = {
+        title: { text: state.colorBy === "score" ? "SAINT-style" : "CRAPome freq", side: "right",
+                 font: { size: 11 } },
+        thickness: 11, len: 0.45, x: 1.03, xanchor: "left", y: 0.25, outlinewidth: 0,
+      };
+    } else {
+      marker.color = color;
+      marker.line = { color: "rgba(255,255,255,.7)", width: 0.4 };
+    }
+    // x is the control value the ratio was taken against: the measured one, or the
+    // floor for a prey the control never detected. Those points belong on the plot —
+    // "in the bait, absent from the EV" is the strongest class this design offers —
+    // but they are drawn hollow so a floor is never mistaken for a measurement.
+    // The symbol is written as a *filled* triangle with a transparent fill and a
+    // coloured line, not as 'triangle-up-open': plotly draws an open symbol from
+    // marker.color, so a transparent colour makes the marker vanish entirely
+    // instead of leaving its outline.
+    const floor = colorbar ? false : name === "lower_bound";
+    const isBait = colorbar ? false : name === "bait_self";
+    const marker2 = floor
+      ? Object.assign({}, marker, {
+          symbol: "triangle-up", size: subset.map(() => 9),
+          color: "rgba(255,255,255,0)", opacity: 1,
+          line: { color, width: 1.6 },
+        })
+      : isBait
+        ? Object.assign({}, marker, { symbol: "diamond", size: subset.map(() => 11), opacity: 1 })
+        : marker;
+    return {
+      type: "scatter", mode: "markers",
+      name: colorbar ? (state.colorBy === "score" ? "all prey, by score" : "all prey, by CRAPome") : STATUS_LABEL[name],
+      x: subset.map((p) => (p.cuse !== null && p.cuse !== undefined) ? p.cuse : p.ctrl),
+      y: subset.map((p) => p.bait), marker: marker2,
+      customdata: subset.map((p) => hoverFields(p, state.minFold, minUp)),
+      hovertemplate: HOVER_TEMPLATE,
+    };
+  }
+
+  function axisMin(cond) {
+    const vals = [];
+    for (const p of decodePoints(cond)) {
+      if (xOf(p) > 0) vals.push(xOf(p));
+      if (p.bait > 0) vals.push(p.bait);
+    }
+    return vals.length ? Math.min.apply(null, vals) * 0.6 : 1e3;
+  }
+  function axisMax(cond) {
+    const vals = [];
+    for (const p of decodePoints(cond)) {
+      if (xOf(p) > 0) vals.push(xOf(p));
+      if (p.bait > 0) vals.push(p.bait);
+    }
+    return vals.length ? Math.max.apply(null, vals) * 2.4 : 1e9;
+  }
+
+  // Guide lines for the empirical null: 2σ and 3σ above no change. With one run
+  // per condition these usually sit far above the 1.5x cutoff, which is the
+  // honest reading of how much of a fold change is signal rather than scatter.
+  function nullGuides(lo, hi) {
+    if (!noise.sigma0) return [];
+    // sigma0 is measured on the corrected log2 ratio, so the line for z sigma sits
+    // at raw ratio 2^(correction + z*sigma0).
+    const corr = 2 ** cond.diagnostics.correction_log2;
+    return [2, 3].map((z) => {
+      const fold = 2 ** (z * noise.sigma0) * corr;
+      return { type: "line", xref: "x", yref: "y", x0: lo, x1: hi,
+               y0: lo * fold, y1: hi * fold,
+               line: { color: "#8a94a6", dash: "dot", width: 1 } };
+    });
+  }
+  // Guide-line names as one text trace (green for the gates, grey for the null
+  // and the diagonals), for the same reason as the candidate names.
+  // The guide labels are placed first and their boxes are handed on, so a candidate
+  // name is never drawn across the gate tag (or onto the dashed lines it sits on).
+  // Place the in-plot guide labels (the gate tag, the null lines, the raw diagonal).
+  // Everything here works in log10 space — the same space the boxes, the text sizes and
+  // the collision padding must share. The previous version mixed the two: it fed linear
+  // axis values into helpers that bin and measure in log10, so the padding was meaningless
+  // and, whenever the live plotly layout was not available yet (the first paint of a
+  // figure), every label was rejected and the plot came up without any in-plot labels.
+  function planGuideLabels(minFold, lo, hi) {
+    const corr = 2 ** cond.diagnostics.correction_log2;
+    const xLeft = lo * 0.6, xRight = hi * 2.2, yTop = hi * 2.2;
+    const logLo = Math.log10(xLeft), logHi = Math.log10(xRight), logTop = Math.log10(yTop);
+    const fontOk = 12;
+    const ppl = pxPerLog([logLo, logHi], [logLo, logTop]);
+    const grid = dotGrid(decodePoints(cond), [logLo, logHi], [logLo, logTop]);
+    const wOf = (text) => (fontOk * 0.68 * text.length + 8) / ppl.x;
+    const hOf = (fontOk + 5) / ppl.y;
+    // A point on the line, as a fraction of the window. In log-log space a guide line at
+    // y = x * fold is simply y = x + log10(fold), so the line is straight and the anchor
+    // needs no clamping: clamping collapsed every candidate position onto one spot, which
+    // silently defeated the collision search on the steep lines.
+    const anchor = (fold, fraction) => {
+      const lx = logLo + (logHi - logLo) * fraction;
+      return { lx, ly: lx + Math.log10(fold) };
+    };
+    const gates = [
+      [corr, "typical prey", 0.97],
+      [2 * corr, "2×", 0.74],
+      [minFold * corr, `${minFold}×`, 0.5],
+      [1, "1:1 raw", 0.06],
+    ].map(([fold, text, fr]) => {
+      const at = anchor(fold, fr);
+      return { ...at, fold, fraction: fr, text, tag: text === `${minFold}×` ? "gate" : text,
+               color: text === "typical prey" ? "#9aa7b4"
+                 : (text === "1:1 raw" ? "#c8d3e0" : (text === "2×" ? "#0f5c2a" : "#1b7f3b")) };
+    });
+    const nulls = noise.sigma0 ? [[2, 0.3], [3, 0.12]].map(([z, fr]) => {
+      const fold = 2 ** (z * noise.sigma0) * corr;
+      const at = anchor(fold, fr);
+      return { ...at, fold, fraction: fr, text: `${z}σ (${(fold / corr).toFixed(0)}×)`,
+               tag: `${z}σ`, color: "#8a94a6" };
+    }) : [];
+    const used = [];
+    const laid = [];
+    for (const item of gates.concat(nulls)) {
+      let fits = null;
+      for (const shift of [0, 0.05, -0.05, 0.1, -0.1, 0.16, -0.16, 0.24, -0.24, 0.34, -0.34]) {
+        const at = anchor(item.fold, Math.min(Math.max(item.fraction + shift, 0.02), 0.98));
+        const box = { x0: at.lx, x1: at.lx + wOf(item.text),
+                      y0: at.ly - hOf / 2, y1: at.ly + hOf / 2 };
+        // keep the text inside the plot and off the top edge of the figure (a small
+        // margin in log10 units, not a multiplier on a log value)
+        const padX = 0.02, topGap = 0.06, dropFrac = (logTop - logLo) * 0.2;
+        if (box.x1 > logHi + padX || box.x0 < logLo - padX) continue;
+        if (box.y1 > logTop - topGap || box.y0 < logLo + dropFrac) continue;
+        // two guide labels on top of each other are worse than a missing one: the legend
+        // names every line anyway
+        if (used.some((b) => overlapped(box, b, 8 / ppl.x, 6 / ppl.y))) continue;
+        const cost = grid.sum(box.x0, box.y0, box.x1, box.y1);
+        if (!fits || cost < fits.cost) fits = { cost, at, box };
+      }
+      if (!fits) continue;
+      used.push(fits.box);
+      laid.push(Object.assign({}, item, { x: 10 ** fits.at.lx, y: 10 ** fits.at.ly }));
+    }
+    return { items: laid, boxes: used };
+  }
+
+  function guideLabelTraces(minFold, lo, hi, plan) {
+    const laid = (plan || planGuideLabels(minFold, lo, hi)).items;
+    if (!laid.length) return [];
+    return ["#1b7f3b", "#0f5c2a", "#9aa7b4", "#8a94a6", "#c8d3e0"].map((color) => {
+      const subset = laid.filter((a) => a.color === color);
+      if (!subset.length) return null;
+      return {
+        type: "scatter", mode: "text", name: `guide ${color}`, showlegend: false,
+        x: subset.map((a) => a.x), y: subset.map((a) => a.y),
+        text: subset.map((a) => a.text), textposition: "middle left",
+        textfont: { size: 12, color }, hoverinfo: "skip",
+      };
+    }).filter(Boolean);
+  }
+
+  function layoutFor(cond, minFold, lo, hi) {
+    // The gates were applied to the load-corrected ratio, so the guides are drawn
+    // at the raw ratios that correspond to them. corr = 2^correction, the factor
+    // every raw fold change was multiplied by.
+    const corr = 2 ** cond.diagnostics.correction_log2;
+    const guide = (fold, color, dash, width) => ({
+      type: "line", xref: "x", yref: "y", x0: lo, x1: hi,
+      y0: lo * fold * corr, y1: hi * fold * corr, line: { color, dash, width },
+    });
+    // A thin diagonal where bait and control are read at face value, for readers
+    // who want to see how far the correction moved the decision lines.
+    const rawDiagonal = { type: "line", xref: "x", yref: "y", x0: lo, x1: hi,
+                          y0: lo, y1: hi, line: { color: "#e8eef5", dash: "dot", width: 1 } };
+    const low = Math.log10(lo * 0.6), high = Math.log10(hi * 2.2);
+    const main = 0.845;                     // main plot occupies this fraction of the width/height
+    const needMarginals = decodePoints(cond).filter((q) => q.ctrl > 0 && q.bait > 0 && !q.lb).length >= 20;
+    const marginalAxes = needMarginals ? {
+      xaxis2: { domain: [0, main], anchor: "y2", type: "linear", range: [low, high],
+                showticklabels: false, showgrid: false, zeroline: false, ticks: "" },
+      yaxis2: { domain: [0.875, 1], anchor: "x2", showticklabels: false, showgrid: false,
+                zeroline: false, ticks: "", title: { text: "" } },
+      xaxis3: { domain: [0.875, 1], anchor: "y3", showticklabels: false, showgrid: false,
+                zeroline: false, ticks: "" },
+      yaxis3: { domain: [0, main], anchor: "x3", type: "linear", range: [low, high],
+                showticklabels: false, showgrid: false, zeroline: false, ticks: "" },
+    } : {};
+    return Object.assign({
+      title: {
+        // Deliberately short: the axis titles carry the channel names, and a long
+        // title would run into the note above the marginal histograms.
+        text: cond.condition,
+        font: { size: 16 },
+        x: 0.01, xanchor: "left",
+      },
+      xaxis: { domain: [0, needMarginals ? main : 1], type: "log",
+               title: { text: `control abundance (${cond.ctrlChannel})`, font: { size: 13 } },
+               gridcolor: "#eef2f7", zeroline: false, ticks: "outside", tickcolor: "#dbe3ec",
+               exponentformat: "power", range: [low, high] },
+      yaxis: { domain: [0, needMarginals ? main : 1], type: "log",
+               title: { text: `experimental abundance (${cond.expChannel})`, font: { size: 13 } },
+               gridcolor: "#eef2f7", zeroline: false, ticks: "outside", tickcolor: "#dbe3ec",
+               exponentformat: "power", range: [low, high] },
+      shapes: [
+        rawDiagonal,
+        guide(1, "#9aa7b4", "dot", 1),
+        guide(minFold, "#1b7f3b", "dash", 1.6),
+        guide(2, "#0f5c2a", "dash", 1.2),
+      ].concat(nullGuides(lo, hi)),
+      margin: { l: 76, r: 108, t: 52, b: 74 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: needMarginals ? "#fbfcfe" : "rgba(0,0,0,0)",
+      legend: { orientation: "h", y: -0.14, font: { size: 12 } },
+      hovermode: "closest",
+      hoverlabel: { bgcolor: "#ffffff", bordercolor: "#cfd8e3",
+                    font: { size: 12, color: "#17212e" }, align: "left" },
+      annotations: (needMarginals ? [{
+        // Right-aligned on the title line: the title sits at the left with a short
+        // text, so the two never meet.
+        x: 0.995, xref: "paper", y: 1.035, yref: "paper", showarrow: false,
+        text: "marginals: control (top) · experimental (right)",
+        font: { size: 10.5, color: "#8a94a6" }, xanchor: "right", yanchor: "bottom",
+      }] : []),
+    }, marginalAxes);
+  }
+
+  // How many candidate names this panel may label right now: the user's setting,
+  // trimmed while an export is being prepared.
+  function labelBudget() {
+    return state.labelTop;
+  }
+
+  function renderTable(counts) {
+    const cols = [
+      ["Gene", (p) => p.gn, "text"],
+      ["Accession", (p) => p.acc, "text"],
+      ["Protein", (p) => p.name || "–", "text"],
+      ["FC (EV-corr.)", (p) => p.fc, "num", "", "EV 通道载量校正后的线性倍数"],
+      ["log2FC", (p) => p.log2fc, "num", "",
+       "EV 校正后的 log2 倍数 = log2(FC)；门槛（≥1.5×）就是在这把尺子上卡的"],
+      ["raw FC", (p) => p.fc_raw, "num", "", "未做任何载量校正的线性倍数 log2(诱饵/对照)"],
+      ["EV", (p) => p.lb ? "not detected" : "measured", "text", "screen-only"],
+      ["SAINT", (p) => p.score, "num"],
+      ["BFDR", (p) => p.bfdr, "num"],
+      ["q (BH)", (p) => p.q, "num"],
+      ["Uniq. pept.", (p) => p.up, "int"],
+      ["PSMs", (p) => p.psm, "int"],
+      ["CRAPome", (p) => p.cfreq, "pct"],
+      ["QC score", (p) => p.qc_combined, "num", "",
+       "批次 QC 的描述性优先分 sqrt(丰度百分位 × 富集百分位)；不是概率、p 值或 FDR"],
+      ["Background", (p) => p.qc_bg_flag || "–", "text", "",
+       "批次 QC 在同批次诱饵家族间统计的背景频率判定：High / Review background suspect"],
+      ["Cross-sample", (p) => p.qc_cross || "–", "text", "screen-only",
+       "批次 QC 的交叉样本筛查结论"],
+    ];
+    // The table is one list ordered by fold change: a prey the control never
+    // detected is not a separate section (its FC is a floor, shown with ≥), it is
+    // simply a candidate whose fold change is large. The "Label by" selector governs
+    // the names drawn on the plot, not this table.
+    const byFold = (a, b) => (((b.fc || 0) - (a.fc || 0))
+      || ((b.fc_raw || 0) - (a.fc_raw || 0)));
+    let rows = passing(counts).slice().sort(byFold);
+    const cell = (c, p) => c[2] === "num" ? ((c[0] === "FC" && p.lb ? "≥ " : "") + fmt(c[1](p), 3))
+      : c[2] === "int" ? (c[1](p) ?? "–")
+      : c[2] === "pct" ? pct(c[1](p)) : c[1](p);
+    container.querySelector("#cand-caption").innerHTML =
+      `${rows.length} candidate${rows.length === 1 ? "" : "s"} pass every gate, ordered by EV-corrected `
+      + `fold change${counts.lower_bound.length
+        ? ` · ${counts.lower_bound.length} EV-undetected prey are mixed in; their FC is a lower `
+          + "bound (≥, compared against this workbook's 5th-percentile control floor)"
+        : ""}`
+      + (rows.length > 12
+          ? ` <span class="screen-only">— scroll inside the table for the rest; click a header to sort</span>`
+          : ` <span class="screen-only">— click a header to sort</span>`)
+;
+    const table = container.querySelector("#cand-table");
+    table.innerHTML = `<thead><tr>${cols.map((c, i) => `<th data-i="${i}" class="${c[3] || ""}" title="${c[4] || ""}">${c[0]}</th>`).join("")}</tr></thead><tbody></tbody>`;
+    const body = table.querySelector("tbody");
+    const picked = state.picked || (state.picked = new Set());
+    const rowKey = (p) => (p.gn || p.acc || "").toUpperCase();
+
+    function updateSelNote() {
+      const note = container.querySelector("#sel-note");
+      if (note) {
+        note.textContent = picked.size
+          ? `${picked.size} picked` : "click rows to pick proteins";
+      }
+    }
+
+    const paint = () => {
+      body.innerHTML = rows.map((p, i) => {
+        const on = picked.has(rowKey(p));
+        return `<tr data-key="${rowKey(p)}" class="${on ? "picked" : ""}">${cols.map((c) =>
+          `<td class="${c[2] === "text" ? "" : "hw"}${c[0] === "Protein" ? " protein" : ""} ${c[3] || ""}">${cell(c, p)}</td>`).join("")}</tr>`;
+      }).join("")
+        || `<tr><td colspan="${cols.length}" style="text-align:left;color:#7a8794">no protein passes every gate at this threshold</td></tr>`;
+      body.querySelectorAll("tr[data-key]").forEach((tr) => {
+        tr.onclick = () => {
+          const key = tr.dataset.key;
+          if (picked.has(key)) picked.delete(key); else picked.add(key);
+          tr.classList.toggle("picked", picked.has(key));
+          updateSelNote();
+        };
+      });
+      updateSelNote();
+    };
+    table.querySelectorAll("th").forEach((th) => {
+      th.onclick = () => {
+        const i = parseInt(th.dataset.i, 10);
+        const numeric = cols[i][2] !== "text";
+        rows = rows.slice().sort((a, b) => {
+          const va = cols[i][1](a), vb = cols[i][1](b);
+          if (va === null || va === undefined) return 1;
+          if (vb === null || vb === undefined) return -1;
+          return numeric ? vb - va : String(va).localeCompare(String(vb));
+        });
+        paint();
+      };
+    });
+    paint();
+  }
+
+  renderChips();
+  draw();
+}
+
+// ------------------------------------------------------------------ notes
+function renderNotes(container) {
+  const t = DATA.thresholds;
+  container.innerHTML = `
+  <div class="card notes">
+    <h3>How the numbers are computed</h3>
+    <table class="glossary" style="margin-top:8px">
+      <thead><tr><th style="width:130px">Term</th><th style="width:210px">Formula</th><th>What it means</th></tr></thead>
+      <tbody>
+        <tr><td style="text-align:left"><b>Abundance</b></td>
+            <td style="text-align:left">the two source columns</td>
+            <td style="text-align:left">Reporter intensity for one channel: the first
+            <code>Abundance:</code> column is the experimental (bait) channel, the second the paired control
+            (EV). Absolute values are not comparable between proteins; only ratios are.</td></tr>
+        <tr><td style="text-align:left"><b>raw FC</b></td>
+            <td style="text-align:left">bait / control</td>
+            <td style="text-align:left">The ratio exactly as it comes out of the workbook. This is the same number as
+            the <code>LOG2FC</code> column already present in the source file (as 2<sup>LOG2FC</sup>) — verified
+            identical to machine precision, so nothing new is introduced here.</td></tr>
+        <tr><td style="text-align:left"><b>Load correction</b></td>
+            <td style="text-align:left">see below</td>
+            <td style="text-align:left">One per-channel scale offset, removed before any gate is applied. It is not a
+            per-protein adjustment.</td></tr>
+        <tr><td style="text-align:left"><b>normalized FC</b></td>
+            <td style="text-align:left">raw FC &times; 2<sup>&minus;correction</sup></td>
+            <td style="text-align:left">The ratio after removing that offset. <b>This is the FC column, and the number
+            the gates are applied to.</b> It answers "how much more abundant is this protein in the bait channel than
+            in the rest of this sample's background", not "than in the EV channel".</td></tr>
+        <tr><td style="text-align:left"><b>Protein name, aliases, function</b></td>
+            <td style="text-align:left">UniProt annotation, cached per accession</td>
+            <td style="text-align:left">The hover card carries the reviewed protein name, the gene synonyms and a
+            trimmed <code>FUNCTION</code> comment from UniProt, joined by accession. The table ships with the
+            report (${Object.keys(DATA.annotations || {}).length} accessions for this batch) so a report opens and
+            travels without network access; refresh it with
+            <code>scripts/fetch_uniprot_annotations.py</code>. Where an accession has no entry, the name from the
+            source workbook is shown instead.</td></tr>
+        <tr><td style="text-align:left"><b>Candidates</b></td>
+            <td style="text-align:left">all four gates</td>
+            <td style="text-align:left">normalized FC &ge; ${t.minFold}&times; <b>and</b> &ge; ${t.minUniquePeptides}
+            unique peptides <b>and</b> not a CRAPome contaminant <b>and</b> not the bait itself, and quantified in the
+            experimental channel. Nothing else is excluded.</td></tr>
+        <tr><td style="text-align:left"><b>Labelled candidates</b></td>
+            <td style="text-align:left">top N of the above</td>
+            <td style="text-align:left">The same list, sorted by SAINT-style score (or by the calibrated q-value when
+            the mixture did not fit), limited to the number chosen in the toolbar. Names are placed to fit the
+            <b>current zoom</b>: the required spacing is a fraction of what is on screen, so a dense corner shows a
+            readable subset and zooming in reveals more, up to the chosen limit. The toolbar note always states how
+            many were placed.</td></tr>
+      </tbody></table>
+
+    <h3>Why a load correction, and which estimator</h3>
+    <ul>
+      <li>In a TMT BioID run every channel is one pulldown, pooled into a single acquisition. If a bait pulldown
+        delivered less protein than the EV, <b>every</b> prey in that channel reads low, and every fold change is
+        shifted by the same amount. Left in place, a fixed 1.5&times; cutoff would mean something different in each
+        condition — and in this batch the offsets are large (up to
+        ${fmt(Math.max(...DATA.conditions.map((c) => Math.abs(c.diagnostics.correction_log2))), 1)} log2).</li>
+      <li>The three estimators in the Overview differ in what they assume. <b>total</b> matches summed signal, which is
+        literally what a loading difference does — but a handful of very abundant proteins dominate the sums
+        (top-10 carry ${pct(Math.min(...DATA.conditions.map((c) => c.diagnostics.concentration_top10)))}&ndash;${pct(Math.max(...DATA.conditions.map((c) => c.diagnostics.concentration_top10)))} of the
+        experimental signal here), so a few genuinely enriched proteins can hijack it. <b>median</b> (the default)
+        takes the median log2 ratio, assuming the typical quantified prey is not an interactor. <b>robust</b> does the
+        same over the better-quantified half.</li>
+      <li><b>Is it necessary?</b> For <i>ranking</i> within one condition, no: subtracting the same constant from every
+        protein cannot reorder them, so which proteins stand out is decided by the noise, not by this choice. It is
+        necessary for the <b>fixed cutoff</b> to be comparable across conditions, and it does affect the q-values.
+        The honest caveat is its assumption: if a bait truly co-purifies a large abundant complex, the median is
+        pulled by real signal and the correction over-corrects. That is why the Overview carries a candidates-by-estimator column — the FAM227B row reads 400 / 343 / 0, which is a statement about how noisy that
+        condition is, not a recommendation to pick the flattering column. The flag is
+        <code>--normalize</code>, whose values <code>total</code>, <code>robust</code> and <code>none</code> switch it.</li>
+    </ul>
+
+    <h3>What this run did</h3>
+    <ul>
+      <li><b>Load correction (${t.normalize}).</b> The experimental and control channels were compared by total
+        protein abundance. When they differ, one log2 shift is subtracted from every fold change so the ratio
+        reflects enrichment rather than how much material each channel received. This is the control-normalization
+        step SAINTq exposes; it is why raw and normalized fold changes can differ.</li>
+      <li><b>Fold-change gate ≥ ${t.minFold}×</b>, applied to the normalized fold change. 1.5× and 2× guides are
+        drawn on every plot, <b>in the corrected frame</b>: a guide at k sits at the raw ratio k × 2<sup>correction</sup>,
+        which is the ratio the gate was actually applied to. The faint diagonal at the bottom-left of each figure is
+        the uncorrected 1:1 line, kept only to show how far the correction moved the decision lines — without it the
+        guides would look like they disagreed with the colours they decide.
+        The gate is a display threshold here: changing it in the toolbar re-colours and
+        re-counts without re-running anything.</li>
+      <li><b>Prey the control never detected.</b> ${(DATA.conditions.reduce((m, c) => Math.max(m, c.diagnostics.n_control_imputed || 0), 0))
+        ? `Detected in the experimental channel and absent from the control is the strongest single-run evidence a
+           BioID design offers, and dropping those rows hides exactly the class being looked for. Each is given the
+           5th-percentile control floor of its own workbook, and its fold change is reported as a lower bound
+           (<code>FC_lower_bound; Control_missing</code>) — never as a measurement. A lower bound that clears the
+           gate is a conservative statement, so these prey are candidates; they take no part in the background
+           spread and no part in any p or q value, because a censored ratio is not a measurement. They are drawn as
+           hollow triangles at the floor they were compared against, listed as <code>EV: not detected</code> in the
+           table, and counted on their own card.`
+        : "No prey in this batch needed a control floor: every quantified prey also had a control value."}</li>
+      <li><b>The baited protein itself is never a candidate.</b> Its own channel enrichment is the assay
+        working, not an interaction, so it is excluded from the candidate count and drawn as its own purple
+        diamond in every figure — visible, but never inflating the list.</li>
+      <li><b>Unique peptide gate ≥ ${t.minUniquePeptides}.</b> A prey below the gate is never called a candidate,
+        however high its ratio. Proteome Discoverer reports this count for the experiment rather than for a single
+        channel, so it is a proxy; an exact per-channel count needs a peptide-level export.</li>
+      <li><b>CRAPome annotation.</b> ${DATA.crapome.applied
+        ? `Detection frequency across ${t.crapomeCell === "all" ? "all human" : t.crapomeCell} control runs at
+           ≥ ${t.crapomeMinSc} spectral counts, taken from the official CRAPome control matrix. A prey above
+           ${(100 * t.crapomeFrequency).toFixed(0)}% is labelled a contaminant and is not called a candidate — it is
+           still listed, never deleted. CRAPome controls are affinity-purification runs, so the reference is related
+           to, but not identical with, the BioID background.`
+        : `Not applied: no CRAPome table was available at run time, so no contaminant annotation was made.`}</li>
+      <li><b>SAINT-style score.</b> A two-component Gaussian mixture fitted per condition by EM on log2 abundances,
+        with the control channel fixing the false-interaction component. The score is the posterior probability that
+        a prey belongs to the enriched component; BFDR is the Newton et al. (2004) estimator over those posteriors.</li>
+    </ul>
+    <h3>What this run did <i>not</i> do</h3>
+    <ul>
+      <li>It is <b>not the official SAINTq</b>. SAINTq scores peptide or fragment intensity data; its publication
+        describes protein-level aggregation as SAINTexpress-equivalent and reports that it underestimates the FDR.</li>
+      <li>There are <b>no replicates</b>: one experimental run per bait against a shared control. Replicates are what
+        make SAINT-family scores calibrated, so treat the score and the approximate BFDR as ranking aids for manual
+        review rather than as a significance test. Adding bait replicates and independent control runs is the single
+        change that would make these numbers defensible.</li>
+      <li>Protein-level tables cannot prove an interaction, cannot separate shared peptides from isoform-specific
+        binding, and cannot distinguish a true proximity partner from a co-purifying abundant protein.</li>
+    </ul>
+    <h3>How to read the scatter plot</h3>
+    <ul>
+      <li>One dot per prey: control abundance on x, experimental abundance on y, both log-scaled; dot size follows the
+        unique peptide count. The histograms along the top and right are the same abundances pooled into bins, so they
+        show each channel's distribution shape directly.</li>
+      <li>Guide lines are identified in the legend, and every one of them is drawn <b>after</b> the load correction:
+        the line for a normalized fold change k sits at the raw ratio k &times; 2<sup>correction</sup>, so the gate line
+        is the boundary of the region it actually decides (the shaded band runs from the typical prey to the gate).
+        The dotted grey lines are the empirical null at 2&sigma; and 3&sigma; — how large a fold change must be before
+        it is unusual for this run; they normally sit far above 1.5&times;, and the "share above gate" card says what
+        fraction of proteins clears the cutoff anyway. The faint diagonal low in the plot is the raw 1:1 line, kept
+        only to show how far the correction moved the decision lines.
+        <b>A 1.5&times; cutoff is a filter, not evidence.</b></li>
+      <li>Colours under "status": grey fails the peptide gate, orange is a CRAPome contaminant, pale blue is below the
+        fold gate, green passes everything, hollow teal triangles are prey the control never detected (their ratio is
+        a lower bound, plotted at the floor they were compared against), and the purple diamond is the baited protein
+        itself, always carrying its own name in the same purple.</li>
+      <li class="screen-only"><b>Which candidates get named.</b> The gates decide who is eligible; the "Label by"
+        selector decides the order names are drawn in, and the toolbar note repeats it in words. On its default,
+        evidence tier, prey the control never detected come first and everything measured follows by score (or by
+        q-value where no score could be fitted). When the top names share one tie — a condition with no real signal —
+        the note says so, because then the order is arbitrary.</li>
+      <li class="screen-only"><b>Marking proteins yourself.</b> Type gene symbols or accessions into the marking box
+        (it suggests matches as you type), or pick rows in the candidate table; either way the names queue up, and
+        "Add mark" draws each of them as a filled dot in the chosen colour with its own name beside it, whatever gate
+        it passes or fails — so a protein of interest can be followed even if it is a contaminant or below the cutoff.
+        Several colours can be active at once. Marks survive changes to the gate, the colouring mode and the label
+        count.</li>
+    </ul>
+    <h3 class="keep-together">References</h3>
+    <ul>
+      <li>Mellacheruvu et al. <i>Nat Methods</i> 2013 — CRAPome contaminant repository (data: v1 flat file, April 2016 release).</li>
+      <li>Choi et al. <i>Nat Methods</i> 2011 — SAINT, the mixture model this score follows.</li>
+      <li>Teo et al. <i>Proteomics</i> 2016 — SAINTq, quantitative scoring at peptide/fragment level.</li>
+      <li>Newton et al. <i>Biostatistics</i> 2004 — false discovery rate from posterior probabilities.</li>
+    </ul>
+  </div>`;
+}
+
+// ------------------------------------------------------------------- build
+function build() {
+  document.getElementById("subtitle").textContent = `${DATA.folder} · generated ${DATA.generated}`;
+  document.getElementById("badges").innerHTML = [
+    `<span class="badge"><b>${DATA.conditions.length}</b> conditions</span>`,
+    `<span class="badge">fold gate <b>≥ ${DATA.thresholds.minFold}×</b></span>`,
+    `<span class="badge">unique peptides <b>≥ ${DATA.thresholds.minUniquePeptides}</b></span>`,
+    `<span class="badge">normalization <b>${DATA.thresholds.normalize}</b></span>`,
+    `<span class="badge">CRAPome <b>${DATA.crapome.applied
+      ? DATA.thresholds.crapomeCell + ", ≥" + (100 * DATA.thresholds.crapomeFrequency).toFixed(0) + "%"
+      : "not applied"}</b></span>`,
+  ].join("");
+
+  const tabs = document.getElementById("tabs");
+  const main = document.getElementById("main");
+  const panels = [];
+
+  const overview = document.createElement("section");
+  overview.className = "panel";
+  main.appendChild(overview);
+  panels.push({ name: "Overview", el: overview, render: () => renderOverview(overview) });
+
+  DATA.conditions.forEach((c, i) => {
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    main.appendChild(panel);
+    panels.push({ name: c.condition, el: panel, render: () => renderCondition(panel, i) });
+  });
+
+  const notes = document.createElement("section");
+  notes.className = "panel";
+  main.appendChild(notes);
+  panels.push({ name: "Methods & caveats", el: notes, render: () => renderNotes(notes) });
+
+  const rendered = new Set();
+  panels.forEach((panel, i) => {
+    const button = document.createElement("button");
+    button.textContent = panel.name;
+    button.onclick = () => activate(i);
+    tabs.appendChild(button);
+    panel.button = button;
+  });
+
+  function activate(i) {
+    panels.forEach((p, j) => {
+      p.el.classList.toggle("active", i === j);
+      p.button.classList.toggle("active", i === j);
+    });
+    // Render lazily: a batch with many conditions stays fast to open.
+    if (!rendered.has(i)) { rendered.add(i); panels[i].render(); }
+  }
+
+  // Deep link: open a specific tab with #<index> or #<condition name>, which
+  // also lets a screenshot of one condition be taken without clicking.
+  const hash = decodeURIComponent((location.hash || "").replace(/^#/, ""));
+  let start = 0;
+  if (hash) {
+    const byName = panels.findIndex((p) => p.name.toLowerCase() === hash.toLowerCase());
+    const byIndex = /^\d+$/.test(hash) ? parseInt(hash, 10) : -1;
+    start = byName >= 0 ? byName : (byIndex >= 0 && byIndex < panels.length ? byIndex : 0);
+  }
+  // Verification hook: returns one figure's PDF as base64 so
+  // tests/verify_report_ui.js can assert real PDF bytes without triggering a
+  // download. (It used to sit next to __preparePrint and was removed with it.)
+  window.__figurePdfBase64 = async function (index) {
+    const host = document.getElementById("plot-" + (index === undefined ? 3 : index))
+      || document.querySelector(".plot-host");
+    let bytes = await figurePdfVector(host);
+    if (!bytes) bytes = await figurePdfBytes(host);
+    return toBase64(bytes);
+  };
+
+  activate(start);
+  document.getElementById("footer").textContent =
+    "Generated by the bioid-analysis skill. Source workbooks were not modified.";
+}
+// A visible error beats a blank page if anything goes wrong in the browser.
+window.addEventListener("error", (event) => {
+  const footer = document.getElementById("footer");
+  if (footer) {
+    footer.innerHTML = '<b style="color:#b26a00">This report hit a script error:</b> '
+      + String(event.message) + " — the numbers are still complete in the Excel summary "
+      + "and the JSON payload.";
+  }
+});
+build();
+</script>
+</body>
+</html>

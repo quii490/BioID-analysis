@@ -1,0 +1,4 @@
+interface:
+  display_name: "BioID Trend"
+  short_description: "Plot proteins' log2FC across several BioIDs"
+  default_prompt: "Use $bioid-trend to plot these proteins' normalized log2FC across the BioID workbooks I list and export a PDF."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "BioID Repeat"
+  short_description: "Compare one bait across cell lines or batches"
+  default_prompt: "Use $bioid-repeat to compare this bait's two experiments and render the correlation scatter report."
