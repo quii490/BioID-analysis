@@ -812,7 +812,18 @@ def render(args, x_labels, x_groups, series, caption, means, out_pdf, out_png):
         if bands and not args.no_xgroup_labels:
             pad = 34 if rotated_band else 26
         ax.set_title(args.title, loc="left", fontsize=11.5, pad=pad)
-    ax.set_xlabel(args.xlabel, fontsize=10, labelpad=5)
+    rotate_now = auto_rotate(x_labels, 9.5, args)
+    if rotate_now:
+        # 旋转刻度时 matplotlib 不会把 xlabel 自动推到旋转后的文字下方，
+        # 字一长就会压到 xlabel 上：按最长标签的竖向投影给 labelpad 和底边距。
+        extent_pt = max(len(label) for label in x_labels) * 9.5 * 0.55 \
+            * math.sin(math.radians(rotate_now))
+        xlabel_pad = 6 + extent_pt * 0.55
+        bottom = min(0.55, max(0.22, (extent_pt * 0.55 + 46) / (args.fig_height * 72)))
+    else:
+        xlabel_pad = 5
+        bottom = 0.145
+    ax.set_xlabel(args.xlabel, fontsize=10, labelpad=xlabel_pad)
     ax.set_ylabel(args.ylabel or "Log2FC", fontsize=10)
 
     for side in ("top", "right", "left", "bottom"):
@@ -835,11 +846,21 @@ def render(args, x_labels, x_groups, series, caption, means, out_pdf, out_png):
                        labelspacing=0.45, handlelength=2.2)
     legend.get_frame().set_linewidth(0.7)
 
-    # 固定边距而不是 tight_layout：图例放在坐标轴外，tight_layout 会把绘图区压窄
-    bottom = 0.22 if auto_rotate(x_labels, 9.5, args) else 0.145
+    # 固定边距而不是 tight_layout：图例放在坐标轴外，tight_layout 会把绘图区压窄；
+    # bottom 由上面按旋转标签的竖向投影算好
     fig.subplots_adjust(left=0.115, right=0.70, bottom=bottom, top=0.905)
     if caption:
-        fig.text(0.01, -0.018, caption, ha="left", va="top", fontsize=7.0,
+        # 旋转刻度时 xlabel 会被 labelpad 推得很低，caption 不能再写死 -0.018，
+        # 否则会压在 xlabel 上：画一次，取 xlabel 的实际底边再往下放。
+        fig.canvas.draw()
+        try:
+            renderer = fig.canvas.get_renderer()
+            label_bottom = fig.transFigure.inverted().transform(
+                (0, ax.xaxis.label.get_window_extent(renderer=renderer).y0))[1]
+            caption_y = min(-0.018, label_bottom - 0.02)
+        except Exception:
+            caption_y = -0.018
+        fig.text(0.01, caption_y, caption, ha="left", va="top", fontsize=7.0,
                  color="#333333", linespacing=1.35)
 
     fig.savefig(out_pdf, format="pdf", bbox_inches="tight", pad_inches=0.12)
